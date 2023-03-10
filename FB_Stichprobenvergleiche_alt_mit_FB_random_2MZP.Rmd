@@ -1,0 +1,2379 @@
+---
+title: "FB-Stichprobenvergleiche"
+author: "Stephan Bartholdy"
+date: '`r format(Sys.Date(), "%d %B %Y")`'
+output:
+  html_document:
+    #self_contained: TRUE
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    theme: lumen
+    highlight: kate
+    number_sections: yes
+---
+
+
+# Vergleich von Klassifikationsmethoden in simulierten Fragebogen-Daten
+
+<br>
+
+> Vergleich von Methoden zur Veränderungsklassifikation in simulierten Fragebogen-Daten für verschiedene Messzeitpunkt-Intervalle:  
+
+> **"FB_original"** besteht aus je 5 Messzeitpunkten im Pre- und im Post-Intervall. Dies sind die ursprünglich simulierten Fragebogen-Daten von N = 67.036 Personen (ursprünglich N = 100.000).  
+
+> **"FB_30MZP_each"** besteht aus je 30 Messzeitpunkten im Pre- und im Post-Intervall. Diese wurden aus den ursprünglichen Simulationsdaten erweitert und umfassen dieselben N = 67.036 Personen.  
+
+> **"FB_random_2MZP"** besteht aus je 1 Messzeitpunkt im Pre- und im Post-Intervall, welche für jede einzelne Person (N = 67.036) zufällig aus den erweiterten Pre- und Post-Intervallen (je 30 Messzeitpunkten) ausgewählt wurden. Die Ziehung entspricht somit realistischen Bedingungen für den Fall, dass jeder Person nur einmal vor und einmal nach einer Behandlung ein Fragebogen vorgegeben wird.  
+
+
+```{r setup, message = FALSE,	warning = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# für Umwandlung RMD -> R Script:
+# knitr::purl("FB_Stichprobenvergleiche.Rmd", documentation = 2)
+
+setwd(
+  "C:/Users/steph/OneDrive/Desktop/Psychologie/Masterstudium Psychologie/3. Semester/1. Master-Konversatorium/Preprocessing und Berechnungen"
+)
+
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(lattice)
+library(Rmisc)
+library(devtools)
+library(psych)
+library(DescTools)
+library(summarytools)
+library(kableExtra)
+library(lubridate)
+library(timetk)
+library(overlapping)
+library(ggplot2)
+library(gghalves)
+
+set.seed(42)
+
+load("cor_07_k1_30MZP_each/FB_30MZP_each.RData")
+FB_30MZP_each = FB_30MZP_each %>%
+  as_tibble()
+
+load("cor_07_k1_30MZP_each/FB_random_2MZP.RData")
+FB_random_2MZP = FB_random_2MZP %>%
+  as_tibble()
+
+FB_original = read.delim("cor_07_k1/cor_07_dataset_k1.txt", row.names=NULL) %>% 
+  as_tibble() %>% 
+  select(PRE1_1:POST1_5) %>% 
+  add_column(., .before = "PRE1_1", ID_orig = 1:nrow(.)) %>% 
+  filter(ID_orig %in% FB_30MZP_each$ID1_PRE)
+
+pre_30mzp = c("PRE1_1","PRE1_2","PRE1_3","PRE1_4","PRE1_5",
+            "PRE1_6","PRE1_7","PRE1_8","PRE1_9","PRE1_10",
+            "PRE1_11","PRE1_12","PRE1_13","PRE1_14","PRE1_15",
+            "PRE1_16","PRE1_17","PRE1_18","PRE1_19","PRE1_20",
+            "PRE1_21","PRE1_22","PRE1_23","PRE1_24","PRE1_25",
+            "PRE1_26","PRE1_27","PRE1_28","PRE1_29","PRE1_30")
+
+post_30mzp = c("POST1_1","POST1_2","POST1_3","POST1_4","POST1_5",
+             "POST1_6","POST1_7","POST1_8","POST1_9","POST1_10",
+             "POST1_11","POST1_12","POST1_13","POST1_14","POST1_15",
+             "POST1_16","POST1_17","POST1_18","POST1_19","POST1_20",
+             "POST1_21","POST1_22","POST1_23","POST1_24","POST1_25",
+             "POST1_26","POST1_27","POST1_28","POST1_29","POST1_30")
+
+pre_5mzp = c("PRE1_1","PRE1_2","PRE1_3","PRE1_4","PRE1_5")
+post_5mzp = c("POST1_1","POST1_2","POST1_3","POST1_4","POST1_5")
+
+FB_original$PRE_Mean = apply(FB_original[pre_5mzp], 1, mean)
+FB_original$POST_Mean = apply(FB_original[post_5mzp], 1, mean)
+FB_original$MeanDiff = FB_original$PRE_Mean - FB_original$POST_Mean
+FB_original$ind.pretestSD = apply(FB_original[pre_5mzp], 1, sd)
+FB_original$ind.posttestSD = apply(FB_original[post_5mzp], 1, sd)
+
+FB_random_2MZP$Diff = FB_random_2MZP$PRE - FB_random_2MZP$POST
+```
+
+***
+
+
+## Überblick über die simulierten Daten {.tabset .tabset-pills}
+
+> Beispiel-Verläufe in den 3 untersuchten Datensets
+
+### Original-Simulationsdaten (je 5 MZP)
+
+```{r warning=FALSE}
+FB_original %>%
+  add_column(., .before = "ID_orig", ID = 1:nrow(.)) %>% 
+  within(., {ind.pretestSD = round(ind.pretestSD, digits = 2)
+            ind.posttestSD = round(ind.posttestSD, digits = 2)}) %>% 
+  head() %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>% 
+  scroll_box(width = "100%")
+```
+
+```{r warning=FALSE}
+x = tibble(ID = c(rep(1,times=11),
+                  rep(2,times=11),
+                  rep(3,times=11),
+                  rep(4,times=11),
+                  rep(5,times=11),
+                  rep(6,times=11),
+                  rep(7,times=11),
+                  rep(8,times=11),
+                  rep(9,times=11),
+                  rep(10,times=11),
+                  rep(11,times=11),
+                  rep(12,times=11),
+                  rep(13,times=11),
+                  rep(14,times=11),
+                  rep(15,times=11),
+                  rep(16,times=11),
+                  rep(17,times=11),
+                  rep(18,times=11),
+                  rep(19,times=11),
+                  rep(20,times=11),
+                  rep(21,times=11),
+                  rep(22,times=11),
+                  rep(23,times=11),
+                  rep(24,times=11),
+                  rep(25,times=11),
+                  rep(26,times=11),
+                  rep(27,times=11)),
+           MZP = rep(seq(as.Date("2020-01-01"), length.out=11, by="1 day"), times=27),
+           Score = c(as.numeric(FB_original[1,pre_5mzp]), NA, as.numeric(FB_original[1,post_5mzp]),
+                     as.numeric(FB_original[2,pre_5mzp]), NA, as.numeric(FB_original[2,post_5mzp]),
+                     as.numeric(FB_original[3,pre_5mzp]), NA, as.numeric(FB_original[3,post_5mzp]),
+                     as.numeric(FB_original[4,pre_5mzp]), NA, as.numeric(FB_original[4,post_5mzp]),
+                     as.numeric(FB_original[5,pre_5mzp]), NA, as.numeric(FB_original[5,post_5mzp]),
+                     as.numeric(FB_original[6,pre_5mzp]), NA, as.numeric(FB_original[6,post_5mzp]),
+                     as.numeric(FB_original[7,pre_5mzp]), NA, as.numeric(FB_original[7,post_5mzp]),
+                     as.numeric(FB_original[8,pre_5mzp]), NA, as.numeric(FB_original[8,post_5mzp]),
+                     as.numeric(FB_original[9,pre_5mzp]), NA, as.numeric(FB_original[9,post_5mzp]),
+                     as.numeric(FB_original[10,pre_5mzp]), NA, as.numeric(FB_original[10,post_5mzp]),
+                     as.numeric(FB_original[11,pre_5mzp]), NA, as.numeric(FB_original[11,post_5mzp]),
+                     as.numeric(FB_original[12,pre_5mzp]), NA, as.numeric(FB_original[12,post_5mzp]),
+                     as.numeric(FB_original[13,pre_5mzp]), NA, as.numeric(FB_original[13,post_5mzp]),
+                     as.numeric(FB_original[14,pre_5mzp]), NA, as.numeric(FB_original[14,post_5mzp]),
+                     as.numeric(FB_original[15,pre_5mzp]), NA, as.numeric(FB_original[15,post_5mzp]),
+                     as.numeric(FB_original[16,pre_5mzp]), NA, as.numeric(FB_original[16,post_5mzp]),
+                     as.numeric(FB_original[17,pre_5mzp]), NA, as.numeric(FB_original[17,post_5mzp]),
+                     as.numeric(FB_original[18,pre_5mzp]), NA, as.numeric(FB_original[18,post_5mzp]),
+                     as.numeric(FB_original[19,pre_5mzp]), NA, as.numeric(FB_original[19,post_5mzp]),
+                     as.numeric(FB_original[20,pre_5mzp]), NA, as.numeric(FB_original[20,post_5mzp]),
+                     as.numeric(FB_original[21,pre_5mzp]), NA, as.numeric(FB_original[21,post_5mzp]),
+                     as.numeric(FB_original[22,pre_5mzp]), NA, as.numeric(FB_original[22,post_5mzp]),
+                     as.numeric(FB_original[23,pre_5mzp]), NA, as.numeric(FB_original[23,post_5mzp]),
+                     as.numeric(FB_original[24,pre_5mzp]), NA, as.numeric(FB_original[24,post_5mzp]),
+                     as.numeric(FB_original[25,pre_5mzp]), NA, as.numeric(FB_original[25,post_5mzp]),
+                     as.numeric(FB_original[26,pre_5mzp]), NA, as.numeric(FB_original[26,post_5mzp]),
+                     as.numeric(FB_original[27,pre_5mzp]), NA, as.numeric(FB_original[27,post_5mzp])))
+
+x %>%
+  filter(ID %in% 1:9) %>%
+  group_by(ID) %>% 
+  plot_time_series(MZP, Score,
+    #.color_var = ID,           # for multiple lines in one plot
+    #.color_lab = "ID",
+    .facet_ncol = 3,
+    .facet_scales = "fixed",
+    .interactive = TRUE,
+    .facet_collapse = FALSE,
+    .smooth = TRUE,
+    .smooth_degree = 2,
+    .smooth_alpha = 0.5,
+    .smooth_size = 0.2
+  )
+
+#x %>%
+#  filter(ID %in% 10:18) %>%
+#  group_by(ID) %>% 
+#  plot_time_series(MZP, Score,
+#    #.color_var = ID,           # for multiple lines in one plot
+#    #.color_lab = "ID",
+#    .facet_ncol = 3,
+#    .facet_scales = "fixed",
+#    .interactive = TRUE,
+#    .facet_collapse = FALSE,
+#    .smooth = TRUE,
+#    .smooth_degree = 2,
+#    .smooth_alpha = 0.5,
+#    .smooth_size = 0.2
+#  )
+
+#x %>%
+#  filter(ID %in% 19:27) %>%
+#  group_by(ID) %>% 
+#  plot_time_series(MZP, Score,
+#    #.color_var = ID,           # for multiple lines in one plot
+#    #.color_lab = "ID",
+#    .facet_ncol = 3,
+#    .facet_scales = "fixed",
+#    .interactive = TRUE,
+#    .facet_collapse = FALSE,
+#    .smooth = TRUE,
+#    .smooth_degree = 2,
+#    .smooth_alpha = 0.5,
+#    .smooth_size = 0.2
+#  )
+```
+
+```{r eval=FALSE}
+# don´t run this section (code for extremely computation-intense plots that I already stored as .RData and .jpg)
+# repeated-measures scatter-boxplot-violin-histograms for individual PRE and POST means
+# from van Langen (2020) Open-visualizations tutorial for repeated measures in R
+
+# FB_original
+# converting my dataframes to use in the same ggplot structure:
+Mean = c()
+
+for (i in 1:nrow(FB_original)) {
+  Mean = c(Mean, FB_original[i,"PRE_Mean"], FB_original[i,"POST_Mean"])
+  message(i)
+}
+
+FB_original_ts = tibble(ID = factor(rep(1:nrow(FB_original), each = 2)),
+                        Interval = c(rep(c(1,2), times = nrow(FB_original))),
+                        Mean = as.numeric(Mean))
+
+save(FB_original_ts, file = "Time Series Dataframes/FB_original_ts.RData")
+
+###
+
+load("Time Series Dataframes/FB_original_ts.RData")
+
+
+# Repeated measures individual datapoints
+Pre_Post_stacked = ggplot(data = FB_original_ts, aes(y = Mean)) +
+  geom_point(aes(x = Interval), color = "dodgerblue", size = 1) +
+  scale_x_continuous(breaks = c(1, 2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (5+5 Timepoints): Individual Pre-Post Means") +
+  theme_classic() +
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_original_Pre-Post_stacked.jpg", plot = Pre_Post_stacked, width = 6, height = 4)
+save(Pre_Post_stacked, file = "Time Series Dataframes/FB_original_Pre_Post_stacked.RData")
+
+
+# Repeated measures with jitter and connections
+FB_original_ts$jit = jitter(FB_original_ts$Interval, amount = .15)
+
+Pre_Post_Jitter = ggplot(data = FB_original_ts, aes(y = Mean)) +
+  geom_point(data = FB_original_ts %>% filter(Interval == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .6) +
+  geom_point(data = FB_original_ts %>% filter(Interval == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .6) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (5+5 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_original_Pre-Post_Jitter.jpg", plot = Pre_Post_Jitter, width = 6, height = 4)
+save(Pre_Post_Jitter, file = "Time Series Dataframes/FB_original_Pre_Post_Jitter.RData")
+
+
+# Repeated measures with box− and violin plots
+FB_original_ts$jit = jitter(FB_original_ts$Interval, amount = .09)
+
+Pre_Post_Box_Violin = ggplot(data = FB_original_ts, aes(y = Mean)) +
+  geom_point(data = FB_original_ts %>% filter(Interval == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .5) +
+  geom_point(data = FB_original_ts %>% filter(Interval == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .5) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  geom_half_boxplot(
+    data = FB_original_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = -.25),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .1,
+    fill = "dodgerblue", alpha = .5) +
+  geom_half_boxplot(
+    data = FB_original_ts %>% filter(Interval == "2"), aes(x = Interval, y = Mean), position = position_nudge(x = .15),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .1,
+    fill = "darkorange", alpha = .5) +
+  geom_half_violin(
+    data = FB_original_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = 1.3),
+    side = "r", fill = "dodgerblue", alpha = .5, trim = FALSE) +
+  geom_half_violin(
+    data = FB_original_ts %>% filter(Interval == "2"), aes(x = Interval, y = Mean), position = position_nudge(x = .3),
+    side = "r", fill = "darkorange", alpha = .5, trim = FALSE) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (5+5 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_original_Pre-Post_Box_Violin.jpg", plot = Pre_Post_Box_Violin, width = 6, height = 4)
+save(Pre_Post_Box_Violin, file = "Time Series Dataframes/FB_original_Pre_Post_Box_Violin.RData")
+
+
+# Repeated measures with box− and violin plots and means + CIs
+score_mean_1 = FB_original_ts %>% filter(Interval == "1") %>% summarise(mean(Mean)) %>% as.numeric()
+score_mean_2 = FB_original_ts %>% filter(Interval == "2") %>% summarise(mean(Mean)) %>% as.numeric()
+score_median1 = FB_original_ts %>% filter(Interval == "1") %>% summarise(median(Mean)) %>% as.numeric()
+score_median2 = FB_original_ts %>% filter(Interval == "2") %>% summarise(median(Mean)) %>% as.numeric()
+score_sd_1 = FB_original_ts %>% filter(Interval == "1") %>% summarise(sd(Mean)) %>% as.numeric()
+score_sd_2 = FB_original_ts %>% filter(Interval == "2") %>% summarise(sd(Mean)) %>% as.numeric()
+score_se_1 = score_sd_1/sqrt(nrow(FB_original))
+score_se_2 = score_sd_2/sqrt(nrow(FB_original))
+score_ci_1 = FB_original_ts %>% filter(Interval == "1") %>% pull(Mean) %>% CI(., ci = 0.95)
+score_ci_2 = FB_original_ts %>% filter(Interval == "2") %>% pull(Mean) %>% CI(., ci = 0.95)
+#Create data frame with 2 rows and 7 columns containing the descriptives
+group = c("PRE", "POST")
+N = c(nrow(FB_original), nrow(FB_original))
+score_mean = c(score_mean_1, score_mean_2)
+score_median = c(score_median1, score_median2)
+sd = c(score_sd_1, score_sd_2)
+se = c(score_se_1, score_se_2)
+ci = c(as.numeric(score_ci_1[1] - score_ci_1[3]), as.numeric(score_ci_2[1] - score_ci_2[3]))
+summary_df = data.frame(group, N, score_mean, score_median, sd, se, ci)
+
+# FB_original_ts$jit = jitter(FB_original_ts$Interval, amount = .09)     #already created above
+x_tick_means = c(.87, 2.13)
+
+Pre_Post_Box_Violin_Mean_CI = ggplot(data = FB_original_ts, aes(y = Mean)) +
+  geom_point(data = FB_original_ts %>% filter(Interval == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .6) +
+  geom_point(data = FB_original_ts %>% filter(Interval == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .6) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  geom_half_boxplot(
+    data = FB_original_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = -.28),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = FALSE, width = .2,
+    fill = "dodgerblue") +
+  geom_half_boxplot(
+    data = FB_original_ts %>% filter(Interval == "2"), aes(x = Interval, y = Mean), position = position_nudge(x = .18),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = FALSE, width = .2,
+    fill = "darkorange") +
+  geom_half_violin(
+    data = FB_original_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = -.3),
+    side = "l", fill = "dodgerblue") +
+  geom_half_violin(
+    data = FB_original_ts %>% filter(Interval == "2"),aes(x = Interval, y = Mean), position = position_nudge(x = .3),
+    side = "r", fill = "darkorange") +
+  geom_point(data = FB_original_ts %>% filter(Interval == "1"), aes(x = Interval, y = score_mean[1]),
+             position = position_nudge(x = -.13), color = "dodgerblue", alpha = .6, size = 1.5) +
+  geom_errorbar(data = FB_original_ts %>% filter(Interval == "1"), aes(x = Interval, y = score_mean[1],
+                                                 ymin = score_mean[1]-ci[1], ymax = score_mean[1]+ci[1]),
+                position = position_nudge(-.13), color = "dodgerblue", width = 0.05, size = 0.4, alpha = .6) +
+  geom_point(data = FB_original_ts %>% filter(Interval == "2"), aes(x = Interval, y = score_mean[2]),
+             position = position_nudge(x = .13), color = "darkorange", alpha = .6, size = 1.5)+
+  geom_errorbar(data = FB_original_ts %>% filter(Interval == "2"), aes(x = Interval, y = score_mean[2],
+                                                 ymin = score_mean[2]-ci[2], ymax = score_mean[2]+ci[2]), 
+                position = position_nudge(.13), color = "darkorange", width = 0.05, size = 0.4, alpha = .6) +
+  geom_line(data = summary_df, aes(x = x_tick_means, y = score_mean), color = "gray", size = 1) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (5+5 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_original_Pre-Post_Box_Violin_Mean+CI.jpg", plot = Pre_Post_Box_Violin_Mean_CI, width = 6, height = 4)
+save(Pre_Post_Box_Violin_Mean_CI, file = "Time Series Dataframes/FB_original_Pre_Post_Box_Violin_Mean_CI.RData")
+```
+
+```{r fig.show="hold", out.width=c("50%","50%")}
+knitr::include_graphics(c("Time Series Dataframes/FB_original_Pre-Post_stacked.jpg","Time Series Dataframes/FB_original_Pre-Post_Jitter.jpg"))
+```
+
+```{r fig.align="center", out.width="75%"}
+knitr::include_graphics("Time Series Dataframes/FB_original_Pre-Post_Box_Violin.jpg")
+knitr::include_graphics("Time Series Dataframes/FB_original_Pre-Post_Box_Violin_Mean+CI.jpg")
+```
+
+***
+
+
+### Erweiterte Intervall-Daten (je 30 MZP)
+
+```{r warning=FALSE}
+FB_30MZP_each %>% 
+  select(-(ID1_PRE:ID6_POST)) %>% 
+  within(., {ind.pretestSD = round(ind.pretestSD, digits = 2)
+            ind.posttestSD = round(ind.posttestSD, digits = 2)}) %>% 
+  head() %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>% 
+  scroll_box(width = "100%")
+```
+
+```{r warning=FALSE}
+x = tibble(ID = c(rep(1,times=61),
+                     rep(2,times=61),
+                     rep(3,times=61),
+                     rep(4,times=61),
+                     rep(5,times=61),
+                     rep(6,times=61),
+                     rep(7,times=61),
+                     rep(8,times=61),
+                     rep(9,times=61),
+                     rep(10,times=61),
+                     rep(11,times=61),
+                     rep(12,times=61),
+                     rep(13,times=61),
+                     rep(14,times=61),
+                     rep(15,times=61),
+                     rep(16,times=61),
+                     rep(17,times=61),
+                     rep(18,times=61),
+                     rep(19,times=61),
+                     rep(20,times=61),
+                     rep(21,times=61),
+                     rep(22,times=61),
+                     rep(23,times=61),
+                     rep(24,times=61),
+                     rep(25,times=61),
+                     rep(26,times=61),
+                     rep(27,times=61)),
+              MZP = rep(seq(as.Date("2020-01-01"), length.out=61, by="1 day"), times=27),
+              Score = c(as.numeric(FB_30MZP_each[1,pre_30mzp]), NA, as.numeric(FB_30MZP_each[1,post_30mzp]),
+                        as.numeric(FB_30MZP_each[2,pre_30mzp]), NA, as.numeric(FB_30MZP_each[2,post_30mzp]),
+                        as.numeric(FB_30MZP_each[3,pre_30mzp]), NA, as.numeric(FB_30MZP_each[3,post_30mzp]),
+                        as.numeric(FB_30MZP_each[4,pre_30mzp]), NA, as.numeric(FB_30MZP_each[4,post_30mzp]),
+                        as.numeric(FB_30MZP_each[5,pre_30mzp]), NA, as.numeric(FB_30MZP_each[5,post_30mzp]),
+                        as.numeric(FB_30MZP_each[6,pre_30mzp]), NA, as.numeric(FB_30MZP_each[6,post_30mzp]),
+                        as.numeric(FB_30MZP_each[7,pre_30mzp]), NA, as.numeric(FB_30MZP_each[7,post_30mzp]),
+                        as.numeric(FB_30MZP_each[8,pre_30mzp]), NA, as.numeric(FB_30MZP_each[8,post_30mzp]),
+                        as.numeric(FB_30MZP_each[9,pre_30mzp]), NA, as.numeric(FB_30MZP_each[9,post_30mzp]),
+                        as.numeric(FB_30MZP_each[10,pre_30mzp]), NA, as.numeric(FB_30MZP_each[10,post_30mzp]),
+                        as.numeric(FB_30MZP_each[11,pre_30mzp]), NA, as.numeric(FB_30MZP_each[11,post_30mzp]),
+                        as.numeric(FB_30MZP_each[12,pre_30mzp]), NA, as.numeric(FB_30MZP_each[12,post_30mzp]),
+                        as.numeric(FB_30MZP_each[13,pre_30mzp]), NA, as.numeric(FB_30MZP_each[13,post_30mzp]),
+                        as.numeric(FB_30MZP_each[14,pre_30mzp]), NA, as.numeric(FB_30MZP_each[14,post_30mzp]),
+                        as.numeric(FB_30MZP_each[15,pre_30mzp]), NA, as.numeric(FB_30MZP_each[15,post_30mzp]),
+                        as.numeric(FB_30MZP_each[16,pre_30mzp]), NA, as.numeric(FB_30MZP_each[16,post_30mzp]),
+                        as.numeric(FB_30MZP_each[17,pre_30mzp]), NA, as.numeric(FB_30MZP_each[17,post_30mzp]),
+                        as.numeric(FB_30MZP_each[18,pre_30mzp]), NA, as.numeric(FB_30MZP_each[18,post_30mzp]),
+                        as.numeric(FB_30MZP_each[19,pre_30mzp]), NA, as.numeric(FB_30MZP_each[19,post_30mzp]),
+                        as.numeric(FB_30MZP_each[20,pre_30mzp]), NA, as.numeric(FB_30MZP_each[20,post_30mzp]),
+                        as.numeric(FB_30MZP_each[21,pre_30mzp]), NA, as.numeric(FB_30MZP_each[21,post_30mzp]),
+                        as.numeric(FB_30MZP_each[22,pre_30mzp]), NA, as.numeric(FB_30MZP_each[22,post_30mzp]),
+                        as.numeric(FB_30MZP_each[23,pre_30mzp]), NA, as.numeric(FB_30MZP_each[23,post_30mzp]),
+                        as.numeric(FB_30MZP_each[24,pre_30mzp]), NA, as.numeric(FB_30MZP_each[24,post_30mzp]),
+                        as.numeric(FB_30MZP_each[25,pre_30mzp]), NA, as.numeric(FB_30MZP_each[25,post_30mzp]),
+                        as.numeric(FB_30MZP_each[26,pre_30mzp]), NA, as.numeric(FB_30MZP_each[26,post_30mzp]),
+                        as.numeric(FB_30MZP_each[27,pre_30mzp]), NA, as.numeric(FB_30MZP_each[27,post_30mzp])))
+
+x %>%
+  filter(ID %in% 1:9) %>%
+  group_by(ID) %>% 
+  plot_time_series(MZP, Score,
+    #.color_var = ID,           # for multiple lines in one plot
+    #.color_lab = "ID",
+    .facet_ncol = 3,
+    .facet_scales = "fixed",
+    .interactive = TRUE,
+    .facet_collapse = FALSE,
+    .smooth = TRUE,
+    .smooth_degree = 2,
+    .smooth_alpha = 0.5,
+    .smooth_size = 0.2
+  )
+
+#x %>%
+#  filter(ID %in% 10:18) %>%
+#  group_by(ID) %>% 
+#  plot_time_series(MZP, Score,
+#    #.color_var = ID,           # for multiple lines in one plot
+#    #.color_lab = "ID",
+#    .facet_ncol = 3,
+#    .facet_scales = "fixed",
+#    .interactive = TRUE,
+#    .facet_collapse = FALSE,
+#    .smooth = TRUE,
+#    .smooth_degree = 2,
+#    .smooth_alpha = 0.5,
+#    .smooth_size = 0.2
+#  )
+
+#x %>%
+#  filter(ID %in% 19:27) %>%
+#  group_by(ID) %>% 
+#  plot_time_series(MZP, Score,
+#    #.color_var = ID,           # for multiple lines in one plot
+#    #.color_lab = "ID",
+#    .facet_ncol = 3,
+#    .facet_scales = "fixed",
+#    .interactive = TRUE,
+#    .facet_collapse = FALSE,
+#    .smooth = TRUE,
+#    .smooth_degree = 2,
+#    .smooth_alpha = 0.5,
+#    .smooth_size = 0.2
+#  )
+```
+
+```{r eval=FALSE}
+# don´t run this section (code for extremely computation-intense plots that I already stored as .RData and .jpg)
+# repeated-measures scatter-boxplot-violin-histograms for individual PRE and POST means
+# from van Langen (2020) Open-visualizations tutorial for repeated measures in R
+
+# FB_30MZP_each
+# converting my dataframes to use in the same ggplot structure:
+Mean = c()
+
+for (i in 1:nrow(FB_30MZP_each)) {
+  Mean = c(Mean, FB_30MZP_each[i,"PRE_Mean"], FB_30MZP_each[i,"POST_Mean"])
+  message(i)
+}
+
+FB_30MZP_each_ts = tibble(ID = factor(rep(1:nrow(FB_30MZP_each), each = 2)),
+                          Interval = c(rep(c(1,2), times = nrow(FB_30MZP_each))),
+                          Mean = as.numeric(Mean))
+
+save(FB_30MZP_each_ts, file = "Time Series Dataframes/FB_30MZP_each_ts.RData")
+
+###
+
+load("Time Series Dataframes/FB_30MZP_each_ts.RData")
+
+
+# Repeated measures individual datapoints
+Pre_Post_stacked = ggplot(data = FB_30MZP_each_ts, aes(y = Mean)) +
+  geom_point(aes(x = Interval), color = "dodgerblue", size = 1) +
+  scale_x_continuous(breaks = c(1, 2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (30+30 Timepoints): Individual Pre-Post Means") +
+  theme_classic() +
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_30MZP_each_Pre-Post_stacked.jpg", plot = Pre_Post_stacked, width = 6, height = 4)
+save(Pre_Post_stacked, file = "Time Series Dataframes/FB_30MZP_each_Pre_Post_stacked.RData")
+
+
+# Repeated measures with jitter and connections
+FB_30MZP_each_ts$jit = jitter(FB_30MZP_each_ts$Interval, amount = .15)
+
+Pre_Post_Jitter = ggplot(data = FB_30MZP_each_ts, aes(y = Mean)) +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .6) +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .6) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (30+30 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_30MZP_each_Pre-Post_Jitter.jpg", plot = Pre_Post_Jitter, width = 6, height = 4)
+save(Pre_Post_Jitter, file = "Time Series Dataframes/FB_30MZP_each_Pre_Post_Jitter.RData")
+
+
+# Repeated measures with box− and violin plots
+FB_30MZP_each_ts$jit = jitter(FB_30MZP_each_ts$Interval, amount = .09)
+
+Pre_Post_Box_Violin = ggplot(data = FB_30MZP_each_ts, aes(y = Mean)) +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .5) +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .5) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  geom_half_boxplot(
+    data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = -.25),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .1,
+    fill = "dodgerblue", alpha = .5) +
+  geom_half_boxplot(
+    data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = Interval, y = Mean), position = position_nudge(x = .15),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .1,
+    fill = "darkorange", alpha = .5) +
+  geom_half_violin(
+    data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = 1.3),
+    side = "r", fill = "dodgerblue", alpha = .5, trim = FALSE) +
+  geom_half_violin(
+    data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = Interval, y = Mean), position = position_nudge(x = .3),
+    side = "r", fill = "darkorange", alpha = .5, trim = FALSE) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (30+30 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_30MZP_each_Pre-Post_Box_Violin.jpg", plot = Pre_Post_Box_Violin, width = 6, height = 4)
+save(Pre_Post_Box_Violin, file = "Time Series Dataframes/FB_30MZP_each_Pre_Post_Box_Violin.RData")
+
+
+# Repeated measures with box− and violin plots and means + CIs
+score_mean_1 = FB_30MZP_each_ts %>% filter(Interval == "1") %>% summarise(mean(Mean)) %>% as.numeric()
+score_mean_2 = FB_30MZP_each_ts %>% filter(Interval == "2") %>% summarise(mean(Mean)) %>% as.numeric()
+score_median1 = FB_30MZP_each_ts %>% filter(Interval == "1") %>% summarise(median(Mean)) %>% as.numeric()
+score_median2 = FB_30MZP_each_ts %>% filter(Interval == "2") %>% summarise(median(Mean)) %>% as.numeric()
+score_sd_1 = FB_30MZP_each_ts %>% filter(Interval == "1") %>% summarise(sd(Mean)) %>% as.numeric()
+score_sd_2 = FB_30MZP_each_ts %>% filter(Interval == "2") %>% summarise(sd(Mean)) %>% as.numeric()
+score_se_1 = score_sd_1/sqrt(nrow(FB_30MZP_each))
+score_se_2 = score_sd_2/sqrt(nrow(FB_30MZP_each))
+score_ci_1 = FB_30MZP_each_ts %>% filter(Interval == "1") %>% pull(Mean) %>% CI(., ci = 0.95)
+score_ci_2 = FB_30MZP_each_ts %>% filter(Interval == "2") %>% pull(Mean) %>% CI(., ci = 0.95)
+#Create data frame with 2 rows and 7 columns containing the descriptives
+group = c("PRE", "POST")
+N = c(nrow(FB_30MZP_each), nrow(FB_30MZP_each))
+score_mean = c(score_mean_1, score_mean_2)
+score_median = c(score_median1, score_median2)
+sd = c(score_sd_1, score_sd_2)
+se = c(score_se_1, score_se_2)
+ci = c((score_ci_1[1] - score_ci_1[3]), (score_ci_2[1] - score_ci_2[3]))
+summary_df = data.frame(group, N, score_mean, score_median, sd, se, ci)
+
+# FB_30MZP_each_ts$jit = jitter(FB_30MZP_each_ts$Interval, amount = .09)     #already created above
+x_tick_means = c(.87, 2.13)
+
+Pre_Post_Box_Violin_Mean_CI = ggplot(data = FB_30MZP_each_ts, aes(y = Mean)) +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .6) +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .6) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  geom_half_boxplot(
+    data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = -.28),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = FALSE, width = .2,
+    fill = "dodgerblue") +
+  geom_half_boxplot(
+    data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = Interval, y = Mean), position = position_nudge(x = .18),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = FALSE, width = .2,
+    fill = "darkorange") +
+  geom_half_violin(
+    data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = Interval, y = Mean), position = position_nudge(x = -.3),
+    side = "l", fill = "dodgerblue") +
+  geom_half_violin(
+    data = FB_30MZP_each_ts %>% filter(Interval == "2"),aes(x = Interval, y = Mean), position = position_nudge(x = .3),
+    side = "r", fill = "darkorange") +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = Interval, y = score_mean[1]),
+             position = position_nudge(x = -.13), color = "dodgerblue", alpha = .6, size = 1.5) +
+  geom_errorbar(data = FB_30MZP_each_ts %>% filter(Interval == "1"), aes(x = Interval, y = score_mean[1],
+                                                 ymin = score_mean[1]-ci[1], ymax = score_mean[1]+ci[1]),
+                position = position_nudge(-.13), color = "dodgerblue", width = 0.05, size = 0.4, alpha = .6) +
+  geom_point(data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = Interval, y = score_mean[2]),
+             position = position_nudge(x = .13), color = "darkorange", alpha = .6, size = 1.5)+
+  geom_errorbar(data = FB_30MZP_each_ts %>% filter(Interval == "2"), aes(x = Interval, y = score_mean[2],
+                                                 ymin = score_mean[2]-ci[2], ymax = score_mean[2]+ci[2]), 
+                position = position_nudge(.13), color = "darkorange", width = 0.05, size = 0.4, alpha = .6) +
+  geom_line(data = summary_df, aes(x = x_tick_means, y = score_mean), color = "gray", size = 1) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Interval") + ylab("Mean") +
+  ggtitle("Paper-Pencil Data (30+30 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_30MZP_each_Pre-Post_Box_Violin_Mean+CI.jpg", plot = Pre_Post_Box_Violin_Mean_CI, width = 6, height = 4)
+save(Pre_Post_Box_Violin_Mean_CI, file = "Time Series Dataframes/FB_30MZP_each_Pre_Post_Box_Violin_Mean_CI.RData")
+```
+
+```{r fig.show="hold", out.width=c("50%","50%")}
+knitr::include_graphics(c("Time Series Dataframes/FB_30MZP_each_Pre-Post_stacked.jpg","Time Series Dataframes/FB_30MZP_each_Pre-Post_Jitter.jpg"))
+```
+
+```{r fig.align="center", out.width="75%"}
+knitr::include_graphics("Time Series Dataframes/FB_30MZP_each_Pre-Post_Box_Violin.jpg")
+knitr::include_graphics("Time Series Dataframes/FB_30MZP_each_Pre-Post_Box_Violin_Mean+CI.jpg")
+```
+
+***
+
+
+### Zufallsstichprobe (je 1 MZP)
+
+```{r warning=FALSE}
+kable(head(FB_random_2MZP)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+```{r warning=FALSE}
+x = tibble(ID = c(rep(1,times=3),
+                     rep(2,times=3),
+                     rep(3,times=3),
+                     rep(4,times=3),
+                     rep(5,times=3),
+                     rep(6,times=3),
+                     rep(7,times=3),
+                     rep(8,times=3),
+                     rep(9,times=3),
+                     rep(10,times=3),
+                     rep(11,times=3),
+                     rep(12,times=3),
+                     rep(13,times=3),
+                     rep(14,times=3),
+                     rep(15,times=3),
+                     rep(16,times=3),
+                     rep(17,times=3),
+                     rep(18,times=3),
+                     rep(19,times=3),
+                     rep(20,times=3),
+                     rep(21,times=3),
+                     rep(22,times=3),
+                     rep(23,times=3),
+                     rep(24,times=3),
+                     rep(25,times=3),
+                     rep(26,times=3),
+                     rep(27,times=3)),
+              MZP = rep(seq(as.Date("2020-01-01"), length.out=3, by="1 day"), times=27),
+              Score = c(as.numeric(FB_random_2MZP[1,"PRE"]), NA, as.numeric(FB_random_2MZP[1,"POST"]),
+                        as.numeric(FB_random_2MZP[2,"PRE"]), NA, as.numeric(FB_random_2MZP[2,"POST"]),
+                        as.numeric(FB_random_2MZP[3,"PRE"]), NA, as.numeric(FB_random_2MZP[3,"POST"]),
+                        as.numeric(FB_random_2MZP[4,"PRE"]), NA, as.numeric(FB_random_2MZP[4,"POST"]),
+                        as.numeric(FB_random_2MZP[5,"PRE"]), NA, as.numeric(FB_random_2MZP[5,"POST"]),
+                        as.numeric(FB_random_2MZP[6,"PRE"]), NA, as.numeric(FB_random_2MZP[6,"POST"]),
+                        as.numeric(FB_random_2MZP[7,"PRE"]), NA, as.numeric(FB_random_2MZP[7,"POST"]),
+                        as.numeric(FB_random_2MZP[8,"PRE"]), NA, as.numeric(FB_random_2MZP[8,"POST"]),
+                        as.numeric(FB_random_2MZP[9,"PRE"]), NA, as.numeric(FB_random_2MZP[9,"POST"]),
+                        as.numeric(FB_random_2MZP[10,"PRE"]), NA, as.numeric(FB_random_2MZP[10,"POST"]),
+                        as.numeric(FB_random_2MZP[11,"PRE"]), NA, as.numeric(FB_random_2MZP[11,"POST"]),
+                        as.numeric(FB_random_2MZP[12,"PRE"]), NA, as.numeric(FB_random_2MZP[12,"POST"]),
+                        as.numeric(FB_random_2MZP[13,"PRE"]), NA, as.numeric(FB_random_2MZP[13,"POST"]),
+                        as.numeric(FB_random_2MZP[14,"PRE"]), NA, as.numeric(FB_random_2MZP[14,"POST"]),
+                        as.numeric(FB_random_2MZP[15,"PRE"]), NA, as.numeric(FB_random_2MZP[15,"POST"]),
+                        as.numeric(FB_random_2MZP[16,"PRE"]), NA, as.numeric(FB_random_2MZP[16,"POST"]),
+                        as.numeric(FB_random_2MZP[17,"PRE"]), NA, as.numeric(FB_random_2MZP[17,"POST"]),
+                        as.numeric(FB_random_2MZP[18,"PRE"]), NA, as.numeric(FB_random_2MZP[18,"POST"]),
+                        as.numeric(FB_random_2MZP[19,"PRE"]), NA, as.numeric(FB_random_2MZP[19,"POST"]),
+                        as.numeric(FB_random_2MZP[20,"PRE"]), NA, as.numeric(FB_random_2MZP[20,"POST"]),
+                        as.numeric(FB_random_2MZP[21,"PRE"]), NA, as.numeric(FB_random_2MZP[21,"POST"]),
+                        as.numeric(FB_random_2MZP[22,"PRE"]), NA, as.numeric(FB_random_2MZP[22,"POST"]),
+                        as.numeric(FB_random_2MZP[23,"PRE"]), NA, as.numeric(FB_random_2MZP[23,"POST"]),
+                        as.numeric(FB_random_2MZP[24,"PRE"]), NA, as.numeric(FB_random_2MZP[24,"POST"]),
+                        as.numeric(FB_random_2MZP[25,"PRE"]), NA, as.numeric(FB_random_2MZP[25,"POST"]),
+                        as.numeric(FB_random_2MZP[26,"PRE"]), NA, as.numeric(FB_random_2MZP[26,"POST"]),
+                        as.numeric(FB_random_2MZP[27,"PRE"]), NA, as.numeric(FB_random_2MZP[27,"POST"])))
+
+x %>%
+  filter(ID %in% 1:9) %>%
+  group_by(ID) %>% 
+  plot_time_series(MZP, Score,
+    #.color_var = ID,           # for multiple lines in one plot
+    #.color_lab = "ID",
+    .facet_ncol = 3,
+    .facet_scales = "fixed",
+    .interactive = TRUE,
+    .facet_collapse = FALSE,
+    .smooth = TRUE,
+    .smooth_degree = 2,
+    .smooth_alpha = 0.5,
+    .smooth_size = 0.2
+  )
+
+#x %>%
+#  filter(ID %in% 10:18) %>%
+#  group_by(ID) %>% 
+#  plot_time_series(MZP, Score,
+#    #.color_var = ID,           # for multiple lines in one plot
+#    #.color_lab = "ID",
+#    .facet_ncol = 3,
+#    .facet_scales = "fixed",
+#    .interactive = TRUE,
+#    .facet_collapse = FALSE,
+#    .smooth = TRUE,
+#    .smooth_degree = 2,
+#    .smooth_alpha = 0.5,
+#    .smooth_size = 0.2
+#  )
+
+#x %>%
+#  filter(ID %in% 19:27) %>%
+#  group_by(ID) %>% 
+#  plot_time_series(MZP, Score,
+#    #.color_var = ID,           # for multiple lines in one plot
+#    #.color_lab = "ID",
+#    .facet_ncol = 3,
+#    .facet_scales = "fixed",
+#    .interactive = TRUE,
+#    .facet_collapse = FALSE,
+#    .smooth = TRUE,
+#    .smooth_degree = 2,
+#    .smooth_alpha = 0.5,
+#    .smooth_size = 0.2
+#  )
+```
+
+```{r eval=FALSE}
+# don´t run this section (code for extremely computation-intense plots that I already stored as .RData and .jpg)
+# repeated-measures scatter-boxplot-violin-histograms for individual PRE and POST means
+# from van Langen (2020) Open-visualizations tutorial for repeated measures in R
+
+# FB_random_2MZP
+# converting my dataframes to use in the same ggplot structure:
+Score = c()
+
+for (i in 1:nrow(FB_random_2MZP)) {
+  Score = c(Score, FB_random_2MZP[i,"PRE"], FB_random_2MZP[i,"POST"])
+  message(i)
+}
+
+FB_random_2MZP_ts = tibble(ID = factor(rep(1:nrow(FB_random_2MZP), each = 2)),
+                           Timepoint = c(rep(c(1,2), times = nrow(FB_random_2MZP))),
+                           Score = as.numeric(Score))
+
+save(FB_random_2MZP_ts, file = "Time Series Dataframes/FB_random_2MZP_ts.RData")
+
+###
+
+load("Time Series Dataframes/FB_random_2MZP_ts.RData")
+
+
+# Repeated measures individual datapoints
+Pre_Post_stacked = ggplot(data = FB_random_2MZP_ts, aes(y = Score)) +
+  geom_point(aes(x = Timepoint), color = "dodgerblue", size = 1) +
+  scale_x_continuous(breaks = c(1, 2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Timepoint") + ylab("Score") +
+  ggtitle("Paper-Pencil Data (1+1 Timepoints): Individual Pre-Post Means") +
+  theme_classic() +
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_random_2MZP_Pre-Post_stacked.jpg", plot = Pre_Post_stacked, width = 6, height = 4)
+save(Pre_Post_stacked, file = "Time Series Dataframes/FB_random_2MZP_Pre_Post_stacked.RData")
+
+
+# Repeated measures with jitter and connections
+FB_random_2MZP_ts$jit = jitter(FB_random_2MZP_ts$Timepoint, amount = .15)
+
+Pre_Post_Jitter = ggplot(data = FB_random_2MZP_ts, aes(y = Score)) +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .6) +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .6) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Timepoint") + ylab("Score") +
+  ggtitle("Paper-Pencil Data (1+1 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_random_2MZP_Pre-Post_Jitter.jpg", plot = Pre_Post_Jitter, width = 6, height = 4)
+save(Pre_Post_Jitter, file = "Time Series Dataframes/FB_random_2MZP_Pre_Post_Jitter.RData")
+
+
+# Repeated measures with box− and violin plots
+FB_random_2MZP_ts$jit = jitter(FB_random_2MZP_ts$Timepoint, amount = .09)
+
+Pre_Post_Box_Violin = ggplot(data = FB_random_2MZP_ts, aes(y = Score)) +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .5) +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .5) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  geom_half_boxplot(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = Timepoint, y = Score), position = position_nudge(x = -.25),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .1,
+    fill = "dodgerblue", alpha = .5) +
+  geom_half_boxplot(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = Timepoint, y = Score), position = position_nudge(x = .15),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .1,
+    fill = "darkorange", alpha = .5) +
+  geom_half_violin(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = Timepoint, y = Score), position = position_nudge(x = 1.3),
+    side = "r", fill = "dodgerblue", alpha = .5, trim = FALSE) +
+  geom_half_violin(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = Timepoint, y = Score), position = position_nudge(x = .3),
+    side = "r", fill = "darkorange", alpha = .5, trim = FALSE) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Timepoint") + ylab("Score") +
+  ggtitle("Paper-Pencil Data (1+1 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_random_2MZP_Pre-Post_Box_Violin.jpg", plot = Pre_Post_Box_Violin, width = 6, height = 4)
+save(Pre_Post_Box_Violin, file = "Time Series Dataframes/FB_random_2MZP_Pre_Post_Box_Violin.RData")
+
+
+# Repeated measures with box− and violin plots and means + CIs
+score_mean_1 = FB_random_2MZP_ts %>% filter(Timepoint == "1") %>% summarise(mean(Score)) %>% as.numeric()
+score_mean_2 = FB_random_2MZP_ts %>% filter(Timepoint == "2") %>% summarise(mean(Score)) %>% as.numeric()
+score_median1 = FB_random_2MZP_ts %>% filter(Timepoint == "1") %>% summarise(median(Score)) %>% as.numeric()
+score_median2 = FB_random_2MZP_ts %>% filter(Timepoint == "2") %>% summarise(median(Score)) %>% as.numeric()
+score_sd_1 = FB_random_2MZP_ts %>% filter(Timepoint == "1") %>% summarise(sd(Score)) %>% as.numeric()
+score_sd_2 = FB_random_2MZP_ts %>% filter(Timepoint == "2") %>% summarise(sd(Score)) %>% as.numeric()
+score_se_1 = score_sd_1/sqrt(nrow(FB_random_2MZP))
+score_se_2 = score_sd_2/sqrt(nrow(FB_random_2MZP))
+score_ci_1 = FB_random_2MZP_ts %>% filter(Timepoint == "1") %>% pull(Score) %>% CI(., ci = 0.95)
+score_ci_2 = FB_random_2MZP_ts %>% filter(Timepoint == "2") %>% pull(Score) %>% CI(., ci = 0.95)
+#Create data frame with 2 rows and 7 columns containing the descriptives
+group = c("PRE", "POST")
+N = c(nrow(FB_random_2MZP), nrow(FB_random_2MZP))
+score_mean = c(score_mean_1, score_mean_2)
+score_median = c(score_median1, score_median2)
+sd = c(score_sd_1, score_sd_2)
+se = c(score_se_1, score_se_2)
+ci = c((score_ci_1[1] - score_ci_1[3]), (score_ci_2[1] - score_ci_2[3]))
+summary_df = data.frame(group, N, score_mean, score_median, sd, se, ci)
+
+# FB_random_2MZP_ts$jit = jitter(FB_random_2MZP_ts$Timepoint, amount = .09)     #already created above
+x_tick_means = c(.87, 2.13)
+
+Pre_Post_Box_Violin_Mean_CI = ggplot(data = FB_random_2MZP_ts, aes(y = Score)) +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = jit), color = "dodgerblue", size = 1,
+             alpha = .6) +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = jit), color = "darkorange", size = 1,
+             alpha = .6) +
+  geom_line(aes(x = jit, group = ID), color = "lightgray", alpha = .05) +
+  geom_half_boxplot(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = Timepoint, y = Score), position = position_nudge(x = -.28),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = FALSE, width = .2,
+    fill = "dodgerblue") +
+  geom_half_boxplot(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = Timepoint, y = Score), position = position_nudge(x = .18),
+    side = "r", outlier.shape = NA, center = TRUE, errorbar.draw = FALSE, width = .2,
+    fill = "darkorange") +
+  geom_half_violin(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = Timepoint, y = Score), position = position_nudge(x = -.3),
+    side = "l", fill = "dodgerblue") +
+  geom_half_violin(
+    data = FB_random_2MZP_ts %>% filter(Timepoint == "2"),aes(x = Timepoint, y = Score), position = position_nudge(x = .3),
+    side = "r", fill = "darkorange") +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = Timepoint, y = score_mean[1]),
+             position = position_nudge(x = -.13), color = "dodgerblue", alpha = .6, size = 1.5) +
+  geom_errorbar(data = FB_random_2MZP_ts %>% filter(Timepoint == "1"), aes(x = Timepoint, y = score_mean[1],
+                                                 ymin = score_mean[1]-ci[1], ymax = score_mean[1]+ci[1]),
+                position = position_nudge(-.13), color = "dodgerblue", width = 0.05, size = 0.4, alpha = .6) +
+  geom_point(data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = Timepoint, y = score_mean[2]),
+             position = position_nudge(x = .13), color = "darkorange", alpha = .6, size = 1.5)+
+  geom_errorbar(data = FB_random_2MZP_ts %>% filter(Timepoint == "2"), aes(x = Timepoint, y = score_mean[2],
+                                                 ymin = score_mean[2]-ci[2], ymax = score_mean[2]+ci[2]), 
+                position = position_nudge(.13), color = "darkorange", width = 0.05, size = 0.4, alpha = .6) +
+  geom_line(data = summary_df, aes(x = x_tick_means, y = score_mean), color = "gray", size = 1) +
+  scale_x_continuous(breaks = c(1,2), labels = c("PRE", "POST"), limits = c(0, 3)) +
+  xlab("Timepoint") + ylab("Score") +
+  ggtitle("Paper-Pencil Data (1+1 Timepoints): Individual Pre-Post Means") +
+  theme_classic()+
+  coord_cartesian(ylim = c(0, 24))
+
+ggsave("Time Series Dataframes/FB_random_2MZP_Pre-Post_Box_Violin_Mean+CI.jpg", plot = Pre_Post_Box_Violin_Mean_CI, width = 6, height = 4)
+save(Pre_Post_Box_Violin_Mean_CI, file = "Time Series Dataframes/FB_random_2MZP_Pre_Post_Box_Violin_Mean_CI.RData")
+```
+
+```{r fig.show="hold", out.width=c("50%","50%")}
+knitr::include_graphics(c("Time Series Dataframes/FB_random_2MZP_Pre-Post_stacked.jpg","Time Series Dataframes/FB_random_2MZP_Pre-Post_Jitter.jpg"))
+```
+
+```{r fig.align="center", out.width="75%"}
+knitr::include_graphics("Time Series Dataframes/FB_random_2MZP_Pre-Post_Box_Violin.jpg")
+knitr::include_graphics("Time Series Dataframes/FB_random_2MZP_Pre-Post_Box_Violin_Mean+CI.jpg")
+```
+
+***
+
+
+## Deskriptive Statistiken der Datensets
+
+```{r}
+tibble(Descriptives = c("mean_PRE_Mean","mean_POST_Mean","mean_MeanDiff","mean_PRE_1MZP","mean_POST_1MZP",
+                        "mean_Diff_1MZP","mean_ind.pretestSD","mean_ind.posttestSD","sd_PRE_1MZP","sd_POST_1MZP"),
+       FB_original = round(c(mean(FB_original$PRE_Mean),mean(FB_original$POST_Mean),mean(FB_original$MeanDiff),NA,NA,NA,
+                       mean(FB_original$ind.pretestSD),mean(FB_original$ind.posttestSD),NA,NA), digits = 3),
+       FB_30MZP_each = round(c(mean(FB_30MZP_each$PRE_Mean),mean(FB_30MZP_each$POST_Mean),mean(FB_30MZP_each$MeanDiff),
+                         NA,NA,NA,mean(FB_30MZP_each$ind.pretestSD),mean(FB_30MZP_each$ind.posttestSD),NA,NA), digits = 3),
+       FB_random_2MZP = round(c(NA,NA,NA,mean(FB_random_2MZP$PRE),mean(FB_random_2MZP$POST),mean(FB_random_2MZP$Diff),
+                          NA,NA,sd(FB_random_2MZP$PRE),sd(FB_random_2MZP$POST)), digits = 3)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+> Boxplots der Pre- und Post-(Mittel-)Werte
+
+```{r fig.show="hold", message=FALSE, warning=FALSE, out.width=c("50%","50%")}
+# Boxplots zum Vergleich
+temp = tibble(Scores = c(FB_original$PRE_Mean, FB_30MZP_each$PRE_Mean, FB_random_2MZP$PRE), Datasets = rep(c("FB_original", "FB_30MZP_each", "FB_random_2MZP"), each = length(FB_original$PRE_Mean)))
+
+ggplot(temp, aes(x = Datasets, y = Scores)) + 
+  geom_boxplot() + 
+  ylim(0, 27) +
+  ggtitle("PHQ-9 PRE(-Mean)") +
+  xlab("Dataset") +
+  ylab("PHQ-9 Scores")
+
+temp = tibble(Scores = c(FB_original$POST_Mean, FB_30MZP_each$POST_Mean, FB_random_2MZP$POST), Datasets = rep(c("FB_original", "FB_30MZP_each", "FB_random_2MZP"), each = length(FB_original$POST_Mean)))
+
+ggplot(temp, aes(x = Datasets, y = Scores)) + 
+  geom_boxplot() + 
+  ylim(0, 27) +
+  ggtitle("PHQ-9 POST(-Mean)") +
+  xlab("Dataset") +
+  ylab("PHQ-9 Scores")
+```
+
+> Boxplots der Pre- und Post-(Mittel-)Werte
+
+```{r fig.align="center", message=FALSE, warning=FALSE, out.width="75%"}
+# Overlap-Plots zum Vergleich
+overlap(list(FB_original_PRE_Mean = FB_original$PRE_Mean, FB_30MZP_each_PRE_Mean = FB_30MZP_each$PRE_Mean), plot = TRUE)$OV * 100
+
+overlap(list(FB_original_PRE_Mean = FB_original$PRE_Mean, FB_random_2MZP_PRE = FB_random_2MZP$PRE), plot = TRUE)$OV * 100
+
+overlap(list(FB_30MZP_each_PRE_Mean = FB_30MZP_each$PRE_Mean, FB_random_2MZP_PRE = FB_random_2MZP$PRE), plot = TRUE)$OV * 100
+```
+
+***
+
+
+## Reliabilitäten und Inter-Item-Korrelationen {.tabset .tabset-pills}
+
+### FB_original (je 5 MZP)
+
+```{r}
+
+# Korrelationsmatrix von PRE- und POST-MZP:
+FB_original_KorMat = cor(FB_original[, c(pre_5mzp, post_5mzp)]) %>% 
+  round(., digits = 2)
+
+# durchschnittliche paarweise Korrelation zwischen aufeinanderfolgenden MZP (beachte: ohne Fisher-Z-Transformation):
+pre_inter_item_rtt = 0L
+for (i in 1:4) {
+  pre_inter_item_rtt = pre_inter_item_rtt + FB_original_KorMat[i,i+1]
+}
+pre_inter_item_rtt = pre_inter_item_rtt / 4
+
+post_inter_item_rtt = 0L
+for (i in 5:9) {
+  post_inter_item_rtt = post_inter_item_rtt + FB_original_KorMat[i,i+1]
+}
+post_inter_item_rtt = post_inter_item_rtt / 4
+
+
+for (i in 1:9) {
+  FB_original_KorMat[i, i+1] = cell_spec(FB_original_KorMat[i, i+1], "html", bold = TRUE)
+}
+
+FB_original_KorMat %>%
+  kable(., format = "html", escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, fixed_thead = T)
+
+
+# mittleres Cronbach´s Alpha zwischen Pre-MZP und Post-MZP:
+PRE_alpha = CronbachAlpha(FB_original[pre_5mzp])
+POST_alpha = CronbachAlpha(FB_original[post_5mzp])
+FB_original_Alpha = FisherZInv(mean(c(FisherZ(PRE_alpha), FisherZ(POST_alpha))))
+
+```
+
+Korrelation zwischen den Pre- und Post-Intervall-Mittelwerten = `r round(cor(FB_original$PRE_Mean, FB_original$POST_Mean, use = "complete.obs"), digits = 3)`.  
+Durchschnittliche paarweise Korrelation zwischen aufeinanderfolgenden Pre-MZP (beachte: ohne Fisher-Z-Transformation): r = `r round(pre_inter_item_rtt, digits = 2)`.  
+Durchschnittliche paarweise Korrelation zwischen aufeinanderfolgenden Post-MZP (beachte: ohne Fisher-Z-Transformation): r = `r round(post_inter_item_rtt, digits = 2)`.  
+Mittleres Cronbach´s Alpha zwischen Pre-MZP und Post-MZP = `r round(FB_original_Alpha, digits = 3)`.  
+
+### FB_30MZP_each (je 30 MZP)
+
+```{r}
+
+# Korrelationsmatrix von PRE- und POST-MZP:
+FB_30MZP_each_KorMat = cor(FB_30MZP_each[, c(pre_30mzp, post_30mzp)]) %>% 
+  round(., digits = 2)
+
+
+# durchschnittliche paarweise Korrelation zwischen aufeinanderfolgenden MZP (beachte: ohne Fisher-Z-Transformation):
+pre_inter_item_rtt = 0L
+for (i in 1:29) {
+  pre_inter_item_rtt = pre_inter_item_rtt + FB_30MZP_each_KorMat[i,i+1]
+}
+pre_inter_item_rtt = pre_inter_item_rtt / 29
+
+post_inter_item_rtt = 0L
+for (i in 31:59) {
+  post_inter_item_rtt = post_inter_item_rtt + FB_30MZP_each_KorMat[i,i+1]
+}
+post_inter_item_rtt = post_inter_item_rtt / 29
+
+
+for (i in 1:59) {
+  FB_30MZP_each_KorMat[i, i+1] = cell_spec(FB_30MZP_each_KorMat[i, i+1], "html", bold = TRUE)
+}
+
+FB_30MZP_each_KorMat %>%
+  kable(., format = "html", escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, fixed_thead = T) %>%
+  scroll_box(height = "800px")
+
+
+# mittleres Cronbach´s Alpha zwischen Pre-MZP und Post-MZP:
+PRE_alpha = CronbachAlpha(FB_30MZP_each[pre_30mzp])
+POST_alpha = CronbachAlpha(FB_30MZP_each[post_30mzp])
+FB_30MZP_each_Alpha = FisherZInv(mean(c(FisherZ(PRE_alpha), FisherZ(POST_alpha))))
+
+```
+
+Korrelation zwischen den Pre- und Post-Intervall-Mittelwerten = `r round(cor(FB_30MZP_each$PRE_Mean, FB_30MZP_each$POST_Mean, use = "complete.obs"), digits = 3)`.  
+Durchschnittliche paarweise Korrelation zwischen aufeinanderfolgenden Pre-MZP (beachte: ohne Fisher-Z-Transformation): r = `r round(pre_inter_item_rtt, digits = 2)`.  
+Durchschnittliche paarweise Korrelation zwischen aufeinanderfolgenden Post-MZP (beachte: ohne Fisher-Z-Transformation): r = `r round(post_inter_item_rtt, digits = 2)`.  
+Mittleres Cronbach´s Alpha zwischen Pre-MZP und Post-MZP = `r round(FB_30MZP_each_Alpha, digits = 3)`.  
+
+### FB_random_2MZP (je 1 MZP)
+
+```{r}
+
+FB_random_2MZP_rtt = cor(FB_random_2MZP$PRE, FB_random_2MZP$POST)
+FB_random_2MZP_Alpha = CronbachAlpha(FB_random_2MZP[c("PRE","POST")])
+
+```
+
+Korrelation zwischen den Pre- und Post-MZP (Retest-Reliabilität) = `r round(FB_random_2MZP_rtt, digits = 3)`.  
+Cronbach´s Alpha zwischen dem Pre- und dem Post-MZP = `r round(FB_random_2MZP_Alpha, digits = 3)`.  
+
+***
+
+
+## Pre-Post-Differenz
+
+```{r, fig.show="hold", out.width="50%"}
+
+hist(FB_original$MeanDiff, col = "lightblue1", main = paste0("Mittlere Pre-Post-Intervall-Differenz in FB_original = ",
+  round(mean(FB_original$MeanDiff), digits = 3)))
+
+hist(FB_30MZP_each$MeanDiff, col = "lightblue1", main = paste0("Mittlere Pre-Post-Intervall-Differenz in FB_30MZP_each = ",
+  round(mean(FB_30MZP_each$MeanDiff), digits = 3)))
+
+hist(FB_random_2MZP$Diff, col = "lightblue1", main = paste0("Mittlere Pre-Post-Differenz in FB_random_2MZP = ", 
+  round(mean(FB_random_2MZP$Diff), digits = 3)))
+
+scatter.hist(FB_random_2MZP$Diff, FB_30MZP_each$MeanDiff, xlab = "FB_random_2MZP$Diff",
+  ylab = "FB_30MZP_each$MeanDiff", ellipse = FALSE, grid = TRUE, col = c("dodgerblue", "darkorange"))
+
+```
+
+Korrelation zwischen den Pre-Post-Differenzen in FB_random_2MZP und FB_30MZP_each = `r round(cor(FB_random_2MZP$Diff, FB_30MZP_each$MeanDiff, use = "complete.obs"), digits = 3)`.
+
+<br>
+
+### Cohen´s d  
+
+> Cohen´s d (mit gepoolten SDs) vom Pre- zum Post-Intervall in den Original-Simulationsdaten (je 5 MZP)
+
+\[
+d = \frac{\overline{x_{1}} - \overline{x_{2}}}  {\sqrt{0.5 \cdot (s_{x}^2 + s_{y}^2)}}
+\]
+
+$\overline{x_{1}}$ = mean of subject´s pretest scores, 
+$\overline{x_{2}}$ = mean of subject´s posttest scores, 
+$s_{x}$ = individual standard deviation of pretest time points, 
+$s_{y}$ = individual standard deviation of posttest time points
+<br>
+
+```{r, fig.align="center", out.width="75%"}
+
+FB_original$Cohen_d = (FB_original$PRE_Mean - FB_original$POST_Mean) / sqrt(0.5 * (FB_original$ind.pretestSD^2 + FB_original$ind.posttestSD^2))
+
+# Sollen Cohen_d %in% c(-Inf,Inf) ein-/ausgeschlossen werden?
+#FB_original = FB_original %>% 
+#  within(., {Cohen_d[Cohen_d %in% c(-Inf,Inf)] = NA})
+
+hist(FB_original$Cohen_d, col = "lightblue1", main = "FB_original$Cohen_d")
+
+cohen_d_5mzp = (mean(FB_original$PRE_Mean) - mean(FB_original$POST_Mean)) / sqrt(0.5 * (mean(FB_original$ind.pretestSD)^2 +
+  mean(FB_original$ind.posttestSD)^2))
+
+```
+
+Gepoolte Varianz zwischen Pre- und Post-Intervall-Mittelwerten in FB_original = `r round(as.numeric(sqrt(var(FB_original$PRE_Mean) + var(FB_original$POST_Mean))), digits = 3)`.  
+Durchschnittliches Cohen´s d zwischen Pre- und Post-Mittelwerten (für jede Person einzeln berechnet) in FB_original = `r round(mean(FB_original$Cohen_d[-which(FB_original$Cohen_d %in% c(-Inf,Inf))]), digits = 3)`.  
+Durchschnittliches Cohen´s d zwischen Pre- und Post-Mittelwerten in FB_original = `r round(cohen_d_5mzp, digits = 3)`.
+<br>
+
+> Cohen´s d (mit gepoolten SDs) vom Pre- zum Post-Intervall in den vollständigen Intervall-Daten (je 30 MZP)
+
+\[
+d = \frac{\overline{x_{1}} - \overline{x_{2}}}  {\sqrt{0.5 \cdot (s_{x}^2 + s_{y}^2)}}
+\]
+
+$\overline{x_{1}}$ = mean of subject´s pretest scores, 
+$\overline{x_{2}}$ = mean of subject´s posttest scores, 
+$s_{x}$ = individual standard deviation of pretest time points, 
+$s_{y}$ = individual standard deviation of posttest time points
+<br>
+
+```{r, fig.align="center", out.width="75%"}
+
+FB_30MZP_each$Cohen_d = (FB_30MZP_each$PRE_Mean - FB_30MZP_each$POST_Mean) / sqrt(0.5 * (FB_30MZP_each$ind.pretestSD^2 +
+  FB_30MZP_each$ind.posttestSD^2))
+
+# Sollen Cohen_d %in% c(-Inf,Inf) ein-/ausgeschlossen werden?
+#FB_30MZP_each = FB_30MZP_each %>% 
+#  within(., {Cohen_d[Cohen_d %in% c(-Inf,Inf)] = NA})
+
+hist(FB_30MZP_each$Cohen_d, col = "lightblue1", main = "FB_30MZP_each$Cohen_d")
+
+cohen_d_30mzp = (mean(FB_30MZP_each$PRE_Mean) - mean(FB_30MZP_each$POST_Mean)) / sqrt(0.5 * (mean(FB_30MZP_each$ind.pretestSD)^2 + mean(FB_30MZP_each$ind.posttestSD)^2))
+
+```
+
+Gepoolte Varianz zwischen Pre- und Post-Intervall-Mittelwerten in FB_30MZP_each = `r round(as.numeric(sqrt(var(FB_30MZP_each$PRE_Mean) + var(FB_30MZP_each$POST_Mean))), digits = 3)`.  
+Durchschnittliches Cohen´s d zwischen Pre- und Post-Mittelwerten (für jede Person einzeln berechnet) in FB_30MZP_each = `r round(mean(FB_30MZP_each$Cohen_d[-which(FB_30MZP_each$Cohen_d %in% c(-Inf,Inf))]), digits = 3)`.  
+Durchschnittliches Cohen´s d zwischen Pre- und Post-Mittelwerten in FB_30MZP_each = `r round(cohen_d_30mzp, digits = 3)`.
+<br>
+
+> Cohen´s d (mit gepoolten SDs) vom Pre- zum Post-MZP in der gezogenen Stichprobe (je 1) MZP)
+
+\[
+d = \frac{\overline{X_{1}} - \overline{X_{2}}}  {\sqrt{0.5 \cdot (s_{X}^2 + s_{Y}^2)}}
+\]
+
+$\overline{X_{1}}$ = mean of pretest scores in the whole sample, 
+$\overline{X_{2}}$ = mean of posttest scores in the whole sample, 
+$s_{X}$ = standard deviation of pretest scores in the whole sample, 
+$s_{Y}$ = standard deviation of posttest scores in the whole sample
+<br>
+
+```{r, fig.align="center", out.width="75%"}
+
+cohen_d_2MZP = (mean(FB_random_2MZP$PRE) - mean(FB_random_2MZP$POST)) / sqrt(0.5 * (sd(FB_random_2MZP$PRE)^2 + sd(FB_random_2MZP$POST)^2))
+
+```
+
+Gepoolte Varianz zwischen dem Pre- und Post-MZP in FB_random_2MZP = `r round(as.numeric(sqrt(var(FB_random_2MZP$PRE) + var(FB_random_2MZP$POST))), digits = 3)`.  
+Durchschnittliches Cohen´s d zwischen dem Pre- und Post-MZP in FB_random_2MZP = `r round(cohen_d_2MZP, digits = 3)`.
+<br>
+
+***
+
+
+## Klinische PHQ-9-Interpretation {.tabset .tabset-pills}
+
+```{r}
+PHQ_Int = tibble(PHQ_Score = c("0-4","5-9","10-14","15-19","20-27"),
+       Klassifikation = c(0,1,2,3,4),
+       Interpretation = c("Minimal or none","Mild","Moderate","Moderately severe","Severe"))
+PHQ_Int %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+### FB_30MZP_each
+
+```{r fig.show="hold", message=FALSE, warning=FALSE, out.width=c("50%","50%")}
+
+FB_30MZP_each = FB_30MZP_each %>% 
+  mutate(PRE_Mean_klass = case_when(
+    PRE_Mean <= 4 ~ 0,
+    PRE_Mean > 4 & PRE_Mean < 10 ~ 1,
+    PRE_Mean >= 10 & PRE_Mean < 15 ~ 2,
+    PRE_Mean >= 15 & PRE_Mean < 20 ~ 3,
+    PRE_Mean >= 20 ~ 4,
+    TRUE ~ PRE_Mean
+  )
+)
+
+temp = FB_30MZP_each %>% 
+  count(PRE_Mean_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+PHQ_Int %>%
+  rename(PRE_Mean_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+
+FB_30MZP_each = FB_30MZP_each %>% 
+  mutate(POST_Mean_klass = case_when(
+    POST_Mean <= 4 ~ 0,
+    POST_Mean > 4 & POST_Mean < 10 ~ 1,
+    POST_Mean >= 10 & POST_Mean < 15 ~ 2,
+    POST_Mean >= 15 & POST_Mean < 20 ~ 3,
+    POST_Mean >= 20 ~ 4,
+    TRUE ~ POST_Mean
+  )
+)
+
+temp = FB_30MZP_each %>% 
+  count(POST_Mean_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+PHQ_Int %>%
+  rename(POST_Mean_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+
+barplot(prop.table(table(FB_30MZP_each$PRE_Mean_klass)), col = "lightblue1", main = "FB_30MZP_each$PRE_Mean_klass")
+barplot(prop.table(table(FB_30MZP_each$POST_Mean_klass)), col = "lightblue1", main = "FB_30MZP_each$POST_Mean_klass")
+
+```
+
+### FB_random_2MZP
+
+```{r message=FALSE, warning=FALSE, fig.show="hold", out.width=c("50%","50%")}
+
+FB_random_2MZP = FB_random_2MZP %>% 
+  mutate(PRE_klass = case_when(
+    PRE <= 4 ~ 0L,
+    PRE > 4 & PRE < 10 ~ 1L,
+    PRE >= 10 & PRE < 15 ~ 2L,
+    PRE >= 15 & PRE < 20 ~ 3L,
+    PRE >= 20 ~ 4L,
+    TRUE ~ PRE
+  )
+)
+
+temp = FB_random_2MZP %>% 
+  count(PRE_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+PHQ_Int %>%
+  rename(PRE_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+
+FB_random_2MZP = FB_random_2MZP %>% 
+  mutate(POST_klass = case_when(
+    POST <= 4 ~ 0L,
+    POST > 4 & POST < 10 ~ 1L,
+    POST >= 10 & POST < 15 ~ 2L,
+    POST >= 15 & POST < 20 ~ 3L,
+    POST >= 20 ~ 4L,
+    TRUE ~ POST
+  )
+)
+
+temp = FB_random_2MZP %>% 
+  count(POST_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+PHQ_Int %>%
+  rename(POST_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+
+barplot(prop.table(table(FB_random_2MZP$PRE_klass)), col = "lightblue1", main = "FB_random_2MZP$PRE_klass")
+barplot(prop.table(table(FB_random_2MZP$POST_klass)), col = "lightblue1", main = "FB_random_2MZP$POST_klass")
+
+```
+
+***
+
+
+## Percentage Change (PC) {.tabset .tabset-pills}
+
+<br>
+\[
+PC = \Bigl(1 - \frac{\overline{x_{2}}} {\overline{x_{1}}}\Bigr) \cdot 100
+\]
+
+$\overline{x_{2}}$ = mean of subject´s posttest scores,
+$\overline{x_{1}}$ = mean of subject´s pretest scores
+
+> Interpretation des Percentage Change:  
+
+```{r}
+PC_Int = tibble(PC = c("PC <= -50","-50 < PC <= -25","-25 < PC < 25","25 <= PC < 50","PC >= 50"),
+                Klassifikation = c(-2,-1,0,1,2),
+                Interpretation = c("starke Verschlechterung","Verschlechterung","keine Veränderung",
+                                   "Verbesserung","starke Verbesserung"))
+PC_Int %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+### FB_30MZP_each
+
+```{r message=FALSE, warning=FALSE, fig.show="hold", out.width="50%"}
+
+FB_30MZP_each$Mean_PC = (1-((FB_30MZP_each$POST_Mean) / (FB_30MZP_each$PRE_Mean))) * 100
+
+# Sollen Mean_PC %in% c(-Inf,Inf) ein-/ausgeschlossen werden?
+#FB_30MZP_each = FB_30MZP_each %>% 
+#  within(., {Mean_PC[Mean_PC %in% c(-Inf,Inf)] = NA})
+
+FB_30MZP_each = FB_30MZP_each %>% 
+  mutate(Mean_PC_klass = case_when(
+    Mean_PC <= -50 ~ -2,
+    Mean_PC > -50 & Mean_PC <= -25 ~ -1,
+    Mean_PC > -25 & Mean_PC < 25 ~ 0,
+    Mean_PC >= 25 & Mean_PC < 50 ~ 1,
+    Mean_PC >= 50 ~ 2,
+    TRUE ~ Mean_PC
+  )
+)
+
+hist(FB_30MZP_each$Mean_PC, col = "lightblue1", main = "FB_30MZP_each$Mean_PC")
+
+barplot(prop.table(table(FB_30MZP_each$Mean_PC_klass)), col = "lightblue1", main = "FB_30MZP_each$Mean_PC_klass")
+
+temp = FB_30MZP_each %>% 
+  count(Mean_PC_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+PC_Int %>%
+  rename(Mean_PC_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+
+x = FB_30MZP_each %>% 
+  within(., {Mean_PC[Mean_PC %in% c(-Inf,Inf)] = NA}) %>% 
+  select(Mean_PC)
+
+y = FB_30MZP_each %>% 
+  within(., {Mean_PC[Mean_PC %in% c(-Inf,Inf)] = NA}) %>% 
+  select(PRE_Mean)
+
+```
+
+Korrelation Mean Percentage Change (je 30 MZP) mit PHQ-Baseline (Pre-Intervall-Mean) = `r round(cor(x, y, use = "complete.obs"), digits = 3)[1]`.
+<br>
+
+### FB_random_2MZP
+
+```{r message=FALSE, warning=FALSE, fig.align = "center", out.width="50%"}
+
+FB_random_2MZP$PC = (1 - (FB_random_2MZP$POST / FB_random_2MZP$PRE)) * 100
+
+# Sollen PC %in% c(-Inf,Inf) ein-/ausgeschlossen werden?
+#FB_random_2MZP = FB_random_2MZP %>% 
+#  within(., {PC[PC %in% c(-Inf,Inf)] = NA})
+
+FB_random_2MZP = FB_random_2MZP %>% 
+  mutate(PC_klass = case_when(
+    PC <= -50 ~ -2,
+    PC > -50 & PC <= -25 ~ -1,
+    PC > -25 & PC < 25 ~ 0,
+    PC >= 25 & PC < 50 ~ 1,
+    PC >= 50 ~ 2,
+    TRUE ~ PC
+  )
+)
+
+barplot(prop.table(table(FB_random_2MZP$PC_klass)), col = "lightblue1", main = "FB_random_2MZP$PC_klass")
+
+temp = FB_random_2MZP %>% 
+  count(PC_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+PC_Int %>%
+  rename(PC_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+
+x = FB_random_2MZP %>% 
+  within(., {PC[PC %in% c(-Inf,Inf)] = NA}) %>% 
+  select(PC)
+
+y = FB_random_2MZP %>% 
+  within(., {PC[PC %in% c(-Inf,Inf)] = NA}) %>% 
+  select(PRE)
+
+```
+
+Korrelation von Percentage Change (je 1 MZP) mit PHQ-Baseline (Pre-MZP) =  `r round(cor(x, y, use = "complete.obs"), digits = 3)[1]`.
+<br>
+
+### Zusammenhang im Scatter-Histogramm
+
+```{r, fig.align="center"}
+
+x = FB_random_2MZP %>% 
+  within(., {PC[PC %in% c(-Inf,Inf)] = NA})
+
+y = FB_30MZP_each %>% 
+  within(., {Mean_PC[Mean_PC %in% c(-Inf,Inf)] = NA})
+
+scatter.hist(x$PC, y$Mean_PC, xlab = "FB_random_2MZP$PC", ylab = "FB_30MZP_each$Mean_PC", ellipse = FALSE, grid = TRUE, col = c("dodgerblue", "darkorange"))
+
+```
+
+***
+
+
+## Reliable Change Index (JT)
+
+<br>
+\[
+RC = \frac{x_{2} - x_{1}}  {s_{diff}}
+\]
+
+\[
+s_{diff} = \sqrt{2 \cdot (S_{E})^2}
+\]
+
+\[
+SE = s_{1} \cdot \sqrt{1 - r_{xx´}}
+\]
+
+\[
+\text{significance cutoff} = 1.96 \cdot s_{diff} = 1.96 \cdot \sqrt{2 \cdot (s_{1} \cdot \sqrt{1 - r_{xx´}})^2}
+\]
+<br>
+
+$x_{2}$ = subject´s posttest score, 
+$x_{1}$ = subject´s pretest score,
+$s_{diff}$ = standard error of difference between test scores, 
+$SE$ = standard error of measurement, 
+$s_{1}$ = standard deviation of test scores at pretest, 
+$r_{xx´}$ = reliability of the measure, 
+$\text{significance cutoff}$ = (absolute) cutoff score for reliable change (95%-criterion)
+
+
+```{r}
+
+FB_30MZP_RCI_JT_Mean = (mean(FB_30MZP_each$POST_Mean) - mean(FB_30MZP_each$PRE_Mean)) / sqrt(2 * (sd(FB_30MZP_each$PRE_Mean) * sqrt(1 - FB_30MZP_each_Alpha)) ^ 2)
+
+FB_random_RCI_JT_Mean = (mean(FB_random_2MZP$POST) - mean(FB_random_2MZP$PRE)) / sqrt(2 * (sd(FB_random_2MZP$PRE) * sqrt(1 - 
+  FB_random_2MZP_Alpha)) ^ 2)
+
+```
+
+Durchschnittlicher RCI(JT) auf Stichproben-Ebene in FB_30MZP_each = `r round(FB_30MZP_RCI_JT_Mean, digits = 3)`.  
+Durchschnittlicher RCI(JT) auf Stichproben-Ebene in FB_random_2MZP = `r round(FB_random_RCI_JT_Mean, digits = 3)`.
+<br>
+
+> RCI(JT) Cutoff von einem Pre- zu einem Post-MZP (95%-Cutoff auf Gruppenebene)
+
+```{r}
+
+RCI_JT_Cutoff = 1.96 * sqrt(2 * (sd(FB_30MZP_each$PRE_Mean) * sqrt(1 - FB_30MZP_each_Alpha)) ^ 2)
+
+```
+
+RCI(JT)-Cutoff für reliable Veränderung in FB_30MZP_each = `r round(RCI_JT_Cutoff, digits = 3)`.
+<br>
+
+> RCI(JT) von einem Pre- zu einem Post-MZP (= original für jede Person individuell)
+
+```{r, fig.align="center"}
+
+FB_random_2MZP$RCI_JT = (FB_random_2MZP$POST - FB_random_2MZP$PRE) / sqrt(2 * (sd(FB_random_2MZP$PRE) * sqrt(1 - FB_random_2MZP_Alpha)) ^ 2)
+
+# Sollen RCI_JT %in% c(-Inf,Inf) ein-/ausgeschlossen werden?
+#FB_random_2MZP = FB_random_2MZP %>% 
+#  within(., {RCI_JT[RCI_JT %in% c(-Inf,Inf)] = NA})
+
+hist(FB_random_2MZP$RCI_JT, col = "lightblue1", main = "FB_random_2MZP$RCI_JT")
+
+
+x = FB_random_2MZP %>% 
+  within(., {RCI_JT[RCI_JT %in% c(-Inf,Inf)] = NA}) %>% 
+  select(RCI_JT)
+
+y = FB_random_2MZP %>% 
+  within(., {RCI_JT[RCI_JT %in% c(-Inf,Inf)] = NA}) %>% 
+  select(PRE)
+
+```
+
+Korrelation RCI_JT (je 1 MZP) mit PHQ-Baseline (Pre-MZP) = `r round(cor(x, y, use = "complete.obs"), digits = 3)[1]`.
+
+***
+
+
+## Individual Reliable Change Index (ind)
+
+### RCI(ind) nur mit SD aus dem individuellen Pre-Intervall
+
+<br>
+\[
+RCI_{ind,preSD} = \frac{\overline{x_{2}} - \overline{x_{1}}}  {SE_{D,pre}}
+\]
+
+\[
+SE_{D,pre} = \sqrt{2 \cdot (s_{x} \cdot (1 - r_{xy})^2)}
+\]
+
+\[
+\text{significance cutoff} = 1.96 \cdot SE_{D,pre} = 1.96 \cdot \sqrt{2 \cdot (s_{x} \cdot (1 - r_{xy})^2)}
+\]
+
+$\overline{x_{2}}$ = mean of subject´s posttest scores, 
+$\overline{x_{1}}$ = mean of subject´s pretest scores, 
+$SE_{D,pre}$ = standard error of difference between the test scores in the individual´s pre interval 
+$s_{x}$ = individual standard deviation of pretest time points, 
+$r_{xy}$ = reliability (internal consistency Cronbach´s $\alpha$) of the measure, 
+$\text{significance cutoff}$ = (absolute) cutoff score for reliable change (95%-criterion)
+<br>
+
+```{r fig.show="hold", out.width=c("50%","50%")}
+
+FB_30MZP_each$SEd_pre = sqrt(2 * (FB_30MZP_each$ind.pretestSD * sqrt(1 - FB_30MZP_each_Alpha)) ^ 2)
+FB_30MZP_each$RCI_ind_preSD = (FB_30MZP_each$POST_Mean - FB_30MZP_each$PRE_Mean) / FB_30MZP_each$SEd_pre
+FB_30MZP_each$RCI_ind_preSD_Cutoff =  1.96 * FB_30MZP_each$SEd_pre
+
+# Sollen SEd_pre, RCI_ind_preSD und RCI_ind_preSD_Cutoff %in% c(-Inf,Inf) ein-/ausgeschlossen werden?
+#FB_30MZP_each = FB_30MZP_each %>% 
+#  within(., {SEd_pre[SEd_pre %in% c(-Inf,Inf)] = NA
+#            	RCI_ind_preSD[RCI_ind_preSD %in% c(-Inf,Inf)] = NA
+#	            RCI_ind_preSD_Cutoff[RCI_ind_preSD_Cutoff %in% c(-Inf,Inf)] = NA})
+
+#hist(FB_30MZP_each$SEd_pre, col = "lightblue1", main = "FB_30MZP_each$SEd_pre")
+hist(FB_30MZP_each$RCI_ind_preSD, col = "lightblue1", main = "FB_30MZP_each$RCI_ind_preSD")
+hist(FB_30MZP_each$RCI_ind_preSD_Cutoff, col = "lightblue1", main = "FB_30MZP_each$RCI_ind_preSD_Cutoff")
+
+```
+
+Durchschnittlicher RCI(ind)-Cutoff für reliable Veränderung in FB_30MZP_each = `r round(mean(FB_30MZP_each$RCI_ind_preSD_Cutoff), digits = 3)`.  
+Korrelation RCI(ind) nur mit Pre-SD (je 30 MZP) mit PHQ-Baseline (Pre-Intervall-Mean) = `r round(cor(FB_30MZP_each$RCI_ind_preSD[-which(FB_30MZP_each$RCI_ind_preSD %in% c(-Inf,Inf))], FB_30MZP_each$PRE_Mean[-which(FB_30MZP_each$RCI_ind_preSD %in% c(-Inf,Inf))]), digits = 3)`.
+<br>
+
+
+### RCI(ind) mit pooled SDs aus beiden individuellen Intervallen
+
+<br>
+\[
+RCI_{ind} = \frac{\overline{x_{2}} - \overline{x_{1}}}  {SE_{D}}
+\]
+
+\[
+SE_{D} = \sqrt{(s_{x}^2 + s_{y}^2) \cdot (1 - r_{xy})}
+\]
+
+\[
+\text{significance cutoff} = 1.96 \cdot SE_{D} = 1.96 \cdot \sqrt{(s_{x}^2 + s_{y}^2) \cdot (1 - r_{xy})}
+\]
+
+$\overline{x_{2}}$ = mean of subject´s posttest scores, 
+$\overline{x_{1}}$ = mean of subject´s pretest scores, 
+$SE_{D}$ = pooled standard error of difference between the test scores 
+$s_{x}$ = individual standard deviation of pretest time points, 
+$s_{y}$ = individual standard deviation of pretest time points, 
+$r_{xy}$ = reliability (internal consistency Cronbach´s $\alpha$) of the measure, 
+$\text{significance cutoff}$ = (absolute) cutoff score for reliable change (95%-criterion)
+<br>
+
+```{r fig.show="hold", out.width=c("50%","50%")}
+
+FB_30MZP_each$SEd_pooled = sqrt((FB_30MZP_each$ind.pretestSD ^ 2 + FB_30MZP_each$ind.posttestSD ^ 2) * (1 - FB_30MZP_each_Alpha))
+FB_30MZP_each$RCI_ind_pooledSD = (FB_30MZP_each$POST_Mean - FB_30MZP_each$PRE_Mean) / FB_30MZP_each$SEd_pooled
+FB_30MZP_each$RCI_ind_pooledSD_Cutoff =  1.96 * FB_30MZP_each$SEd_pooled
+
+# Sollen SEd_pooled, RCI_ind_pooledSD und RCI_ind_pooledSD_Cutoff %in% c(-Inf,Inf) ein-/ausgeschlossen werden?
+#FB_30MZP_each = FB_30MZP_each %>% 
+#  within(., {SEd_pooled[SEd_pooled %in% c(-Inf,Inf)] = NA
+#            	RCI_ind_pooledSD[RCI_ind_pooledSD %in% c(-Inf,Inf)] = NA
+#	            RCI_ind_pooledSD_Cutoff[RCI_ind_pooledSD_Cutoff %in% c(-Inf,Inf)] = NA})
+
+#hist(FB_30MZP_each$SEd_pooled, col = "lightblue1", main = "FB_30MZP_each$SEd_pooled")
+hist(FB_30MZP_each$RCI_ind_pooledSD, col = "lightblue1", main = "FB_30MZP_each$RCI_ind_pooledSD")
+hist(FB_30MZP_each$RCI_ind_pooledSD_Cutoff, col = "lightblue1", main = "FB_30MZP_each$RCI_ind_pooledSD_Cutoff")
+
+```
+
+Durchschnittlicher RCI(ind)-Cutoff für reliable Veränderung in FB_30MZP_each = `r round(mean(FB_30MZP_each$RCI_ind_pooledSD_Cutoff), digits = 3)`.  
+Korrelation RCI(ind) mit pooled SDs (je 30 MZP) mit PHQ-Baseline (Pre-Intervall-Mean) = `r round(cor(FB_30MZP_each$RCI_ind_pooledSD[-which(FB_30MZP_each$RCI_ind_pooledSD %in% c(-Inf,Inf))], FB_30MZP_each$PRE_Mean[-which(FB_30MZP_each$RCI_ind_pooledSD %in% c(-Inf,Inf))]), digits = 3)`.
+
+***
+
+
+## Vergleich RCI(JT) - RCI(ind)
+
+> Vergleich des RCI(JT) in der gezogenen Stichprobe (je 1 MZP) mit anderen RCIs (ind) in den vollständigen Intervall-Daten (je 30 MZP)
+
+```{r fig.align="center"}
+
+x = FB_30MZP_each %>% 
+  within(., {RCI_ind_preSD[RCI_ind_preSD %in% c(-Inf,Inf)] = NA
+         RCI_ind_pooledSD[RCI_ind_pooledSD %in% c(-Inf,Inf)] = NA})
+
+y = FB_random_2MZP %>% 
+  within(., {RCI_JT[RCI_JT %in% c(-Inf,Inf)] = NA})
+
+scatter.hist(x$RCI_ind_preSD, y$RCI_JT, xlab = "FB_30MZP_each$RCI_ind_preSD", ylab = "FB_random_2MZP$RCI_JT", ellipse =  FALSE, grid = TRUE, col = c("dodgerblue",  "darkorange"))
+
+scatter.hist(x$RCI_ind_pooledSD, y$RCI_JT, xlab = "FB_30MZP_each$RCI_ind_pooledSD", ylab = "FB_random_2MZP$RCI_JT",  ellipse = FALSE, grid = TRUE, col = c("dodgerblue", "darkorange"))
+
+```
+
+***
+
+
+## RCI-Klassifikationen
+
+```{r}
+RCI_Int = tibble(RCI = c("RCI < -1,96","-1,96 <= RCI <= 1,96","RCI > 1,96"),
+                Klassifikation = c(-1,0,1),
+                Interpretation = c("reliable Verbesserung","keine reliable Veränderung","reliable Verschlechterung"))
+RCI_Int %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+> FB_random_2MZP: RCI(JT)
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_random_2MZP = FB_random_2MZP %>% 
+  mutate(RCI_JT_klass = case_when(
+    RCI_JT < -1.96 ~ -1,
+    RCI_JT >= -1.96 & RCI_JT < 1.96 ~ 0,
+    RCI_JT > 1.96 ~ 1,
+    TRUE ~ RCI_JT
+  )
+)
+
+temp = FB_random_2MZP %>% 
+  count(RCI_JT_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+RCI_Int %>%
+  rename(RCI_JT_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_random_2MZP$RCI_JT_klass)), col = "lightblue1", main = "FB_random_2MZP$RCI_JT_klass")
+
+```
+
+> FB_30MZP_each: RCI(ind) nur mit Pre-SDs
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_30MZP_each = FB_30MZP_each %>% 
+  mutate(RCI_ind_preSD_klass = case_when(
+    RCI_ind_preSD < -1.96 ~ -1,
+    RCI_ind_preSD >= -1.96 & RCI_ind_preSD < 1.96 ~ 0,
+    RCI_ind_preSD > 1.96 ~ 1,
+    TRUE ~ RCI_ind_preSD
+  )
+)
+
+temp = FB_30MZP_each %>% 
+  count(RCI_ind_preSD_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+RCI_Int %>%
+  rename(RCI_ind_preSD_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_30MZP_each$RCI_ind_preSD_klass)), col = "lightblue1", main = "FB_30MZP_each$RCI_ind_preSD_klass")
+
+```
+
+> FB_30MZP_each: RCI(ind) mit pooled SDs
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_30MZP_each = FB_30MZP_each %>% 
+  mutate(RCI_ind_pooledSD_klass = case_when(
+    RCI_ind_pooledSD < -1.96 ~ -1,
+    RCI_ind_pooledSD >= -1.96 & RCI_ind_pooledSD < 1.96 ~ 0,
+    RCI_ind_pooledSD > 1.96 ~ 1,
+    TRUE ~ RCI_ind_pooledSD
+  )
+)
+
+temp = FB_30MZP_each %>% 
+  count(RCI_ind_pooledSD_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+RCI_Int %>%
+  rename(RCI_ind_pooledSD_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_30MZP_each$RCI_ind_pooledSD_klass)), col = "lightblue1", main = "FB_30MZP_each$RCI_ind_pooledSD_klass")
+
+```
+
+***
+
+
+## Clinically Significant Improvement (CSI) {.tabset .tabset-pills}
+
+> Clinically Significant Improvement (CSI) vom Pre- zum Post-Intervall
+
+> "The original validation study of the PHQ-9 defined clinically significant improvement as a post-treatment score of <= 9 combined with improvement of 50%." (McMillan, Gilbody, & Richards, 2010)
+
+```{r}
+CSI_Int = tibble(CSI = c("PHQ-9 Post-Score <= 9 & PC >= 50","PHQ-9 Post-Score > 9 | PC < 50"),
+                Klassifikation = c(-1,0),
+                Interpretation = c("klinisch signifikante Verbesserung","keine klinisch signifikante Veränderung"))
+CSI_Int %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+### CSI in FB_30MZP_each
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_30MZP_each = FB_30MZP_each %>% 
+  mutate(CSI_klass = case_when(
+    POST_Mean <= 9 & Mean_PC >= 50 ~ -1,
+    POST_Mean > 9 | Mean_PC < 50 ~ 0,
+    TRUE ~ POST_Mean
+  )
+)
+
+temp = FB_30MZP_each %>% 
+  count(CSI_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+CSI_Int %>%
+  rename(CSI_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_30MZP_each$CSI_klass)), col = "lightblue1", main = "FB_30MZP_each$CSI_klass")
+
+```
+
+### CSI in FB_random_2MZP
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_random_2MZP = FB_random_2MZP %>% 
+  mutate(CSI_klass = case_when(
+    POST <= 9 & PC >= 50 ~ -1L,
+    POST > 9 | PC < 50 ~ 0L,
+    TRUE ~ POST
+  )
+)
+
+temp = FB_random_2MZP %>% 
+  count(CSI_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+CSI_Int %>%
+  rename(CSI_klass = Klassifikation) %>%
+  full_join(., temp) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_random_2MZP$CSI_klass)), col = "lightblue1", main = "FB_random_2MZP$CSI_klass")
+
+```
+
+***
+
+
+## Individuelle Übereinstimmung der Klassifikationen {.tabset .tabset-pills}
+
+> Übereinstimmung der Klassifikationen auf individueller Ebene am Beispiel von FB_random_2MZP als Teil von FB_30MZP_each:  
+> 0   =   keine Übereinstimmung der Klassifikationen (für dieselbe Person)  
+> 1   =   Übereinstimmung der Klassifikationen (für dieselbe Person)   
+
+> Interpretation von Cohen´s Kappa:
+
+```{r}
+tibble(Cohen_Kappa = c("k < .20",".21 <= k < .40",".41 <= k < .60",".61 <= k < .80","k > .80"),
+       Interpretation = c("poor","fair","moderate","good","very good")) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+### Klinische PHQ-9-Interpretation
+
+> Übereinstimmung zwischen den klinischen Interpretationen der PHQ-9-Werte für Pre- und Post-Intervalle (je 30 MZP) und für einzelne Pre- und Post-Messzeitpunkte (je 1 MZP):
+
+```{r message=FALSE, warning=FALSE, fig.show="hold", out.width="50%"}
+
+FB_joined = full_join(FB_30MZP_each, FB_random_2MZP, by = "ID", suffix = c(".30",".2"))
+
+FB_joined = FB_joined %>% 
+  mutate(Pre_klass_agreement = case_when(
+    PRE_klass != PRE_Mean_klass ~ 0L,
+    PRE_klass == PRE_Mean_klass ~ 1L,
+    TRUE ~ PRE_klass
+  )
+)
+
+FB_joined %>% 
+  count(Pre_klass_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$Pre_klass_agreement)), col = "lightblue1", main = "FB_joined$Pre_klass_agreement")
+
+k_PRE.PRE_Mean_klass = round(CohenKappa(x = c(FB_joined$PRE_klass), y = c(FB_joined$PRE_Mean_klass), conf.level = .05), digits = 2)
+
+
+FB_joined = FB_joined %>% 
+  mutate(Post_klass_agreement = case_when(
+    POST_klass != POST_Mean_klass ~ 0L,
+    POST_klass == POST_Mean_klass ~ 1L,
+    TRUE ~ POST_klass
+  )
+)
+
+FB_joined %>% 
+  count(Post_klass_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$Post_klass_agreement)), col = "lightblue1", main = "FB_joined$Post_klass_agreement")
+
+k_POST.POST_Mean_klass = round(CohenKappa(x = c(FB_joined$POST_klass), y = c(FB_joined$POST_Mean_klass), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen der PHQ-9-Werte (1 Pre-MZP vs. Pre-Intervall) = `r k_PRE.PRE_Mean_klass[[1]]`.  
+Cohen´s Kappa zwischen den Klassifikationen der PHQ-9-Werte (1 Post-MZP vs. Post-Intervall) = `r k_POST.POST_Mean_klass[[1]]`.
+<br>
+
+### Percentage Change (PC)
+
+> Übereinstimmung zwischen Klassifikationen des Mean Percentage Change (je 30 MZP) und des Percentage Change (je 1 MZP):  
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(PC_agreement = case_when(
+    Mean_PC_klass != PC_klass ~ 0,
+    Mean_PC_klass == PC_klass ~ 1,
+    TRUE ~ Mean_PC_klass
+  )
+)
+
+FB_joined %>% 
+  count(PC_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$PC_agreement)), col = "lightblue1", main = "FB_joined$PC_agreement")
+
+k_PC.Mean_PC_klass = round(CohenKappa(x = c(FB_joined$PC_klass), y = c(FB_joined$Mean_PC_klass), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des PC (je 1 MZP) und des Mean PC (je 30 MZP) = `r k_PC.Mean_PC_klass[[1]]`.
+<br>
+
+### RCI(ind)
+
+> Übereinstimmung zwischen Klassifikationen des RCI(ind) nur mit Pre-SD (je 30 MZP) und des RCI(ind) mit pooled SDs (je 30 MZP):  
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(RCI_ind_preSD_pooledSD_agreement = case_when(
+    RCI_ind_preSD_klass != RCI_ind_pooledSD_klass ~ 0,
+    RCI_ind_preSD_klass == RCI_ind_pooledSD_klass ~ 1,
+    TRUE ~ RCI_ind_preSD_klass
+  )
+)
+
+FB_joined %>% 
+  count(RCI_ind_preSD_pooledSD_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$RCI_ind_preSD_pooledSD_agreement)), col = "lightblue1", main = "FB_joined$RCI_ind_preSD_pooledSD_agreement")
+
+k_RCI_ind_preSD.pooledSD_klass = round(CohenKappa(x = c(FB_joined$RCI_ind_preSD_klass), y = c(FB_joined$RCI_ind_pooledSD_klass), conf.level =
+  .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des RCI(ind) nur mit Pre-SD (je 30 MZP) und des RCI(ind) mit pooled SDs (je 30 MZP) = `r k_RCI_ind_preSD.pooledSD_klass[[1]]`.
+<br>
+
+### RCI(ind) (Pre-SD) und RCI(JT)
+
+> Übereinstimmung zwischen Klassifikationen des RCI(ind) nur mit Pre-SD (je 30 MZP) und des RCI(JT) (je 1 MZP):  
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(RCI_ind_preSD_JT_agreement = case_when(
+    RCI_ind_preSD_klass != RCI_JT_klass ~ 0,
+    RCI_ind_preSD_klass == RCI_JT_klass ~ 1,
+    TRUE ~ RCI_ind_preSD_klass
+  )
+)
+
+FB_joined %>% 
+  count(RCI_ind_preSD_JT_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$RCI_ind_preSD_JT_agreement)), col = "lightblue1", main = "FB_joined$RCI_ind_preSD_JT_agreement")
+
+k_RCI_JT.ind_preSD_klass = round(CohenKappa(x = c(FB_joined$RCI_JT_klass), y = c(FB_joined$RCI_ind_preSD_klass), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des RCI(ind) nur mit Pre-SD (je 30 MZP) und des RCI(JT) (je 1 MZP) = `r k_RCI_JT.ind_preSD_klass[[1]]`.
+<br>
+
+### RCI(ind) (pooled SD) und RCI(JT)
+
+> Übereinstimmung zwischen Klassifikationen des RCI(ind) mit pooled SDs (je 30 MZP) und des RCI(JT) (je 1 MZP):  
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(RCI_ind_JT_agreement = case_when(
+    RCI_ind_pooledSD_klass != RCI_JT_klass ~ 0,
+    RCI_ind_pooledSD_klass == RCI_JT_klass ~ 1,
+    TRUE ~ RCI_ind_pooledSD_klass
+  )
+)
+
+FB_joined %>% 
+  count(RCI_ind_JT_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$RCI_ind_JT_agreement)), col = "lightblue1", main = "FB_joined$RCI_ind_JT_agreement")
+
+k_RCI_JT.ind_pooledSD_klass = round(CohenKappa(x = c(FB_joined$RCI_JT_klass), y = c(FB_joined$RCI_ind_pooledSD_klass), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des RCI(ind) mit pooled SDs (je 30 MZP) und des RCI(JT) (je 1 MZP) = `r k_RCI_JT.ind_pooledSD_klass[[1]]`.
+<br>
+
+### CSI
+
+> Übereinstimmung zwischen Klassifikationen des Clinically Significant Change (je 1 MZP vs. je 30 MZP): 
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(CSI_agreement = case_when(
+    CSI_klass.2 != CSI_klass.30 ~ 0L,
+    CSI_klass.2 == CSI_klass.30 ~ 1L,
+    TRUE ~ CSI_klass.2
+  )
+)
+
+FB_joined %>% 
+  count(CSI_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$CSI_agreement)), col = "lightblue1", main = "FB_joined$CSI_agreement")
+
+k_CSI_2MZP.30MZP_klass = round(CohenKappa(x = c(FB_joined$CSI_klass.2), y = c(FB_joined$CSI_klass.30), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des Clinically Significant Change (je 1 MZP vs. je 30 MZP) = `r k_CSI_2MZP.30MZP_klass[[1]]`.
+<br>
+
+### CSI und RCI(JT)
+
+> Übereinstimmung zwischen Klassifikationen des Clinically Significant Change (je 1 MZP) und des RCI(JT) (je 1 MZP):
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(CSI_RCI_JT_agreement = case_when(
+    CSI_klass.2 != RCI_JT_klass ~ 0L,
+    CSI_klass.2 == RCI_JT_klass ~ 1L,
+    TRUE ~ CSI_klass.2
+  )
+)
+
+FB_joined %>% 
+  count(CSI_RCI_JT_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$CSI_RCI_JT_agreement)), col = "lightblue1", main = "FB_joined$CSI_RCI_JT_agreement")
+
+k_CSI_2MZP.RCI_JT_klass = round(CohenKappa(x = c(FB_joined$CSI_klass.2), y = c(FB_joined$RCI_JT_klass), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des Clinically Significant Change (je 1 MZP) und des RCI(JT) (je 1 MZP) = `r k_CSI_2MZP.RCI_JT_klass[[1]]`.
+<br>
+
+### CSI und RCI(ind) (Pre-SD)
+
+> Übereinstimmung zwischen Klassifikationen des Clinically Significant Change (je 30 MZP) und des RCI(ind) nur mit Pre-SD (je 30 MZP):
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(CSI_RCI_ind_preSD_agreement = case_when(
+    CSI_klass.30 != RCI_ind_preSD_klass ~ 0,
+    CSI_klass.30 == RCI_ind_preSD_klass ~ 1,
+    TRUE ~ CSI_klass.30
+  )
+)
+
+FB_joined %>% 
+  count(CSI_RCI_ind_preSD_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$CSI_RCI_ind_preSD_agreement)), col = "lightblue1", main = "FB_joined$CSI_RCI_ind_preSD_agreement")
+
+k_CSI_30MZP.RCI_ind_preSD_klass = round(CohenKappa(x = c(FB_joined$CSI_klass.30), y = c(FB_joined$RCI_ind_preSD_klass), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des Clinically Significant Change (je 30 MZP) und des RCI(ind) nur mit Pre-SD (je 30 MZP) = `r k_CSI_30MZP.RCI_ind_preSD_klass[[1]]`.
+<br>
+
+### CSI und RCI(ind) (pooled SD)
+
+> Übereinstimmung zwischen Klassifikationen des Clinically Significant Change (je 30 MZP) und des RCI(ind) mit pooled SDs (je 30 MZP):
+
+```{r message=FALSE, warning=FALSE, out.width="50%", fig.align="center"}
+
+FB_joined = FB_joined %>% 
+  mutate(CSI_RCI_ind_pooledSD_agreement = case_when(
+    CSI_klass.30 != RCI_ind_pooledSD_klass ~ 0,
+    CSI_klass.30 == RCI_ind_pooledSD_klass ~ 1,
+    TRUE ~ CSI_klass.30
+  )
+)
+
+FB_joined %>% 
+  count(CSI_RCI_ind_pooledSD_agreement) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2)) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(prop.table(table(FB_joined$CSI_RCI_ind_pooledSD_agreement)), col = "lightblue1", main = "FB_joined$CSI_RCI_ind_pooledSD_agreement")
+
+k_CSI_30MZP.RCI_ind_pooledSD_klass = round(CohenKappa(x = c(FB_joined$CSI_klass.30), y = c(FB_joined$RCI_ind_pooledSD_klass), conf.level = .05), digits = 2)
+
+```
+
+Cohen´s Kappa zwischen den Klassifikationen des Clinically Significant Change (je 30 MZP) und des RCI(ind) mit pooled SDs (je 30 MZP) = `r k_CSI_30MZP.RCI_ind_pooledSD_klass[[1]]`.
+
+***
+
+
+## Sensitivität und Spezifität der Klassifikationsmethoden
+
+> Diagnostische Sensitivität und Spezifität einer "neuen" Testmethode im Vergleich zu einer "Goldstandard"-Testmethode:  
+> Sensitivität = Wahrscheinlichkeit für ein richtig-positives Testergebnis   
+> Spezifität = Wahrscheinlichkeit für ein richtig-negatives Testergebnis   
+
+\[
+Sensitivity = \frac{\sum{\text{True Positives}}} {\sum{\text{True Positives}} + \sum{\text{False Negatives}}}
+\]
+
+\[
+Specificity = \frac{\sum{\text{True Negatives}}} {\sum{\text{True Negatives}} + \sum{\text{False Positives}}}
+\]
+
+
+> Absolute Häufigkeiten der Veränderungs-Klassifikationen (verändert vs. nicht verändert) der Klassifikationsmethoden im Vergleich zum RCI(ind) mit pooled SDs (je 30 MZP) als "Goldstandard":
+
+```{r}
+
+temp = tibble(Method = c("RCI_ind_pooledSD_klass","RCI_ind_preSD_klass","RCI_JT_klass","Mean_PC_klass","PC_klass",
+                         "CSI_klass.30","CSI_klass.2"),
+              Dataset = c("FB_30MZP_each","FB_30MZP_each","FB_random_2MZP","FB_30MZP_each","FB_random_2MZP",
+                          "FB_30MZP_each","FB_random_2MZP"),
+              n_Changed = c(sum(FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)), 
+                            sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1)),
+                            sum(FB_random_2MZP$RCI_JT_klass %in% c(-1,1)), 
+                            sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2)),
+                            sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2)), 
+                            sum(FB_30MZP_each$CSI_klass == -1), 
+                            sum(FB_random_2MZP$CSI_klass == -1)),
+              n_Unchanged = c(sum(FB_30MZP_each$RCI_ind_pooledSD_klass == 0), 
+                              sum(FB_30MZP_each$RCI_ind_preSD_klass == 0),
+                              sum(FB_random_2MZP$RCI_JT_klass == 0), 
+                              sum(FB_30MZP_each$Mean_PC_klass == 0),
+                              sum(FB_random_2MZP$PC_klass == 0), 
+                              sum(FB_30MZP_each$CSI_klass == 0), 
+                              sum(FB_random_2MZP$CSI_klass == 0)),
+              Total = c(sum(!is.na(FB_30MZP_each$RCI_ind_pooledSD_klass)),
+                        sum(!is.na(FB_30MZP_each$RCI_ind_preSD_klass)),
+                        sum(!is.na(FB_random_2MZP$RCI_JT_klass)),
+                        sum(!is.na(FB_30MZP_each$Mean_PC_klass)),
+                        sum(!is.na(FB_random_2MZP$PC_klass)), 
+                        sum(!is.na(FB_30MZP_each$CSI_klass)), 
+                        sum(!is.na(FB_random_2MZP$CSI_klass))),
+              Sensitivity = as.numeric(NA),
+              Specificity = as.numeric(NA))
+
+temp[2,"Sensitivity"] = sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1) & 
+                              FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) /
+                      (sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1) & 
+                             FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) +
+                      sum(FB_30MZP_each$RCI_ind_preSD_klass == 0 & 
+                            FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)))
+temp[3,"Sensitivity"] = sum(FB_random_2MZP$RCI_JT_klass %in% c(-1,1) & 
+                              FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) /
+                      (sum(FB_random_2MZP$RCI_JT_klass %in% c(-1,1) & 
+                             FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) +
+                      sum(FB_random_2MZP$RCI_JT_klass == 0 & 
+                            FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)))
+temp[4,"Sensitivity"] = sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2) & 
+                              FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) /
+                      (sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2) & 
+                             FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) +
+                      sum(FB_30MZP_each$Mean_PC_klass == 0 & 
+                            FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)))
+temp[5,"Sensitivity"] = sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2) & 
+                              FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) /
+                      (sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2) & 
+                             FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) +
+                      sum(FB_random_2MZP$PC_klass == 0 & 
+                            FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)))
+temp[6,"Sensitivity"] = sum(FB_30MZP_each$CSI_klass == -1 & 
+                              FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) /
+                      (sum(FB_30MZP_each$CSI_klass == -1 & 
+                             FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) +
+                      sum(FB_30MZP_each$CSI_klass == 0 & 
+                            FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)))
+temp[7,"Sensitivity"] = sum(FB_random_2MZP$CSI_klass == -1 & 
+                              FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) /
+                      (sum(FB_random_2MZP$CSI_klass == -1 & 
+                             FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)) +
+                      sum(FB_random_2MZP$CSI_klass == 0 & 
+                            FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)))
+
+temp[2,"Specificity"] = sum(FB_30MZP_each$RCI_ind_preSD_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) /
+                      (sum(FB_30MZP_each$RCI_ind_preSD_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) +
+                      sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1) & FB_30MZP_each$RCI_ind_pooledSD_klass == 0))
+temp[3,"Specificity"] = sum(FB_random_2MZP$RCI_JT_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) /
+                      (sum(FB_random_2MZP$RCI_JT_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) +
+                      sum(FB_random_2MZP$RCI_JT_klass %in% c(-1,1) & FB_30MZP_each$RCI_ind_pooledSD_klass == 0))
+temp[4,"Specificity"] = sum(FB_30MZP_each$Mean_PC_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) /
+                      (sum(FB_30MZP_each$Mean_PC_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) +
+                      sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2) & FB_30MZP_each$RCI_ind_pooledSD_klass == 0))
+temp[5,"Specificity"] = sum(FB_random_2MZP$PC_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) /
+                      (sum(FB_random_2MZP$PC_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) +
+                      sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2) & FB_30MZP_each$RCI_ind_pooledSD_klass == 0))
+temp[6,"Specificity"] = sum(FB_30MZP_each$CSI_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) /
+                      (sum(FB_30MZP_each$CSI_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) +
+                      sum(FB_30MZP_each$CSI_klass == -1 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0))
+temp[7,"Specificity"] = sum(FB_random_2MZP$CSI_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) /
+                      (sum(FB_random_2MZP$CSI_klass == 0 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0) +
+                      sum(FB_random_2MZP$CSI_klass == -1 & FB_30MZP_each$RCI_ind_pooledSD_klass == 0))
+
+temp$Sensitivity = round(temp$Sensitivity, digits = 3)
+temp$Specificity = round(temp$Specificity, digits = 3)
+
+temp %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+```
+
+> Absolute Häufigkeiten der Veränderungs-Klassifikationen (verändert vs. nicht verändert) der Klassifikationsmethoden im Vergleich zum RCI(JT) (je 1 MZP) als "Goldstandard":
+
+```{r}
+
+temp = tibble(Method = c("RCI_JT_klass","RCI_ind_pooledSD_klass","RCI_ind_preSD_klass","Mean_PC_klass","PC_klass",
+                         "CSI_klass.30","CSI_klass.2"),
+              Dataset = c("FB_random_2MZP","FB_30MZP_each","FB_30MZP_each","FB_30MZP_each","FB_random_2MZP",
+                          "FB_30MZP_each","FB_random_2MZP"),
+              n_Changed = c(sum(FB_random_2MZP$RCI_JT_klass %in% c(-1,1)), 
+                            sum(FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1)),
+                            sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1)), 
+                            sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2)),
+                            sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2)), 
+                            sum(FB_30MZP_each$CSI_klass == -1), 
+                            sum(FB_random_2MZP$CSI_klass == -1)),
+              n_Unchanged = c(sum(FB_random_2MZP$RCI_JT_klass == 0), 
+                              sum(FB_30MZP_each$RCI_ind_pooledSD_klass == 0),
+                              sum(FB_30MZP_each$RCI_ind_preSD_klass == 0), 
+                              sum(FB_30MZP_each$Mean_PC_klass == 0),
+                              sum(FB_random_2MZP$PC_klass == 0), 
+                              sum(FB_30MZP_each$CSI_klass == 0),
+                              sum(FB_random_2MZP$CSI_klass == 0)),
+              Total = c(sum(!is.na(FB_random_2MZP$RCI_JT_klass)), 
+                        sum(!is.na(FB_30MZP_each$RCI_ind_pooledSD_klass)),
+                        sum(!is.na(FB_30MZP_each$RCI_ind_preSD_klass)), 
+                        sum(!is.na(FB_30MZP_each$Mean_PC_klass)),
+                        sum(!is.na(FB_random_2MZP$PC_klass)), 
+                        sum(!is.na(FB_30MZP_each$CSI_klass)), 
+                        sum(!is.na(FB_random_2MZP$CSI_klass))),
+              Sensitivity = as.numeric(NA),
+              Specificity = as.numeric(NA))
+
+temp[2,"Sensitivity"] = sum(FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) /
+                      (sum(FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) +
+                      sum(FB_30MZP_each$RCI_ind_pooledSD_klass == 0 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)))
+temp[3,"Sensitivity"] = sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) /
+                      (sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) +
+                      sum(FB_30MZP_each$RCI_ind_preSD_klass == 0 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)))
+temp[4,"Sensitivity"] = sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) /
+                      (sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) +
+                      sum(FB_30MZP_each$Mean_PC_klass == 0 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)))
+temp[5,"Sensitivity"] = sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) /
+                      (sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2) & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) +
+                      sum(FB_random_2MZP$PC_klass == 0 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)))
+temp[6,"Sensitivity"] = sum(FB_30MZP_each$CSI_klass == -1 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) /
+                      (sum(FB_30MZP_each$CSI_klass == -1 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) +
+                      sum(FB_30MZP_each$CSI_klass == 0 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)))
+temp[7,"Sensitivity"] = sum(FB_random_2MZP$CSI_klass == -1 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) /
+                      (sum(FB_random_2MZP$CSI_klass == -1 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)) +
+                      sum(FB_random_2MZP$CSI_klass == 0 & FB_random_2MZP$RCI_JT_klass %in% c(-1,1)))
+
+temp[2,"Specificity"] = sum(FB_30MZP_each$RCI_ind_pooledSD_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) /
+                      (sum(FB_30MZP_each$RCI_ind_pooledSD_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) +
+                      sum(FB_30MZP_each$RCI_ind_pooledSD_klass %in% c(-1,1) & FB_random_2MZP$RCI_JT_klass == 0))
+temp[3,"Specificity"] = sum(FB_30MZP_each$RCI_ind_preSD_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) /
+                      (sum(FB_30MZP_each$RCI_ind_preSD_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) +
+                      sum(FB_30MZP_each$RCI_ind_preSD_klass %in% c(-1,1) & FB_random_2MZP$RCI_JT_klass == 0))
+temp[4,"Specificity"] = sum(FB_30MZP_each$Mean_PC_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) /
+                      (sum(FB_30MZP_each$Mean_PC_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) +
+                      sum(FB_30MZP_each$Mean_PC_klass %in% c(-2,-1,1,2) & FB_random_2MZP$RCI_JT_klass == 0))
+temp[5,"Specificity"] = sum(FB_random_2MZP$PC_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) /
+                      (sum(FB_random_2MZP$PC_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) +
+                      sum(FB_random_2MZP$PC_klass %in% c(-2,-1,1,2) & FB_random_2MZP$RCI_JT_klass == 0))
+temp[6,"Specificity"] = sum(FB_30MZP_each$CSI_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) /
+                      (sum(FB_30MZP_each$CSI_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) +
+                      sum(FB_30MZP_each$CSI_klass == -1 & FB_random_2MZP$RCI_JT_klass == 0))
+temp[7,"Specificity"] = sum(FB_random_2MZP$CSI_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) /
+                      (sum(FB_random_2MZP$CSI_klass == 0 & FB_random_2MZP$RCI_JT_klass == 0) +
+                      sum(FB_random_2MZP$CSI_klass == -1 & FB_random_2MZP$RCI_JT_klass == 0))
+
+temp$Sensitivity = round(temp$Sensitivity, digits = 3)
+temp$Specificity = round(temp$Specificity, digits = 3)
+
+temp %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+```
+
+***
+
+
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+## Zusammenfassung der Klassifikationen
+
+FB_joined %>% 
+  select(PRE_Mean_klass, POST_Mean_klass, Mean_PC_klass, RCI_ind_preSD_klass, RCI_ind_pooledSD_klass, CSI_klass.30,
+         PRE_klass, POST_klass, PC_klass, RCI_JT_klass, CSI_klass.2,
+         Pre_klass_agreement, Post_klass_agreement, PC_agreement, CSI_agreement, CSI_RCI_JT_agreement,
+         CSI_RCI_ind_preSD_agreement, CSI_RCI_ind_pooledSD_agreement) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+
+
+#####
+x = FB_30MZP_each %>% 
+  count(PRE_Mean_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+y = FB_30MZP_each %>% 
+  count(POST_Mean_klass) %>% 
+  mutate(Percentage = round(((n / sum(n)) * 100), digits = 2))
+
+temp = PHQ_Int %>%
+  rename(PRE_Mean_klass = Klassifikation) %>%
+  full_join(., x)
+
+temp %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+barplot(temp$PRE_Mean_klass, temp$Percentage, col = "lightblue1", main = "temp$Percentage by temp$PRE_Mean_klass")
+
+```
+
+
